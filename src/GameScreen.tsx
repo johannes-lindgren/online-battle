@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { GameRuntime } from '@martini-kit/core'
-import { Application, Graphics } from 'pixi.js'
+import { Application, Graphics, type Renderer } from 'pixi.js'
 import { TrysteroTransport } from '@martini-kit/transport-trystero'
-import { createGame } from './Game'
+import { createGame, type GameState } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 
 interface GameProps {
@@ -11,11 +11,51 @@ interface GameProps {
   onBackToMenu: () => void
 }
 
+type GameGraphics = {
+  ball: Graphics
+  paddle: Record<string, Graphics>
+}
+
+// Render function - updates Pixi graphics from current state
+const render = (app: Application<Renderer>, gameGraphics: GameGraphics, state: GameState) => {
+  // Update ball
+  gameGraphics.ball.clear()
+  gameGraphics.ball.circle(state.ball.x, state.ball.y, 10)
+  gameGraphics.ball.fill(0xffffff)
+
+  // Update paddles
+  Object.entries(state.players).forEach(([playerId, player]) => {
+    if (!gameGraphics.paddle[playerId]) {
+      console.log('Creating paddle for', playerId)
+      gameGraphics.paddle[playerId] = new Graphics()
+      app.stage.addChild(gameGraphics.paddle[playerId])
+    }
+
+    const paddle = gameGraphics.paddle[playerId]
+    paddle.clear()
+
+    const x = player.side === 'left' ? 20 : 780
+    paddle.rect(x - 10, player.y - 50, 20, 100)
+    paddle.fill(0x00ff00)
+  })
+
+  // Remove paddles for disconnected players
+  Object.keys(gameGraphics.paddle).forEach((playerId) => {
+    if (!state.players[playerId]) {
+      app.stage.removeChild(gameGraphics.paddle[playerId])
+      delete gameGraphics.paddle[playerId]
+    }
+  })
+}
+
+
 export function Game({ mode, roomId, onBackToMenu }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    if (!canvasRef.current) return
+    if (!canvasRef.current) {
+      return
+    }
 
     // Initialize Pixi Application
     const app = new Application()
@@ -47,51 +87,14 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
           playerIds: isHost ? [transport.getPlayerId()] : [],
         })
 
-        const graphics: {
-          ball: Graphics
-          paddle: Record<string, Graphics>
-        } = {
+        const gameGraphics: GameGraphics = {
           paddle: {},
           ball: new Graphics(),
         }
 
-        app.stage.addChild(graphics.ball)
+        app.stage.addChild(gameGraphics.ball)
 
         const keyTracker = keyDownTracker()
-
-        // Render function - updates Pixi graphics from current state
-        const render = () => {
-          const state = runtime.getState()
-
-          // Update ball
-          graphics.ball.clear()
-          graphics.ball.circle(state.ball.x, state.ball.y, 10)
-          graphics.ball.fill(0xffffff)
-
-          // Update paddles
-          Object.entries(state.players).forEach(([playerId, player]) => {
-            if (!graphics.paddle[playerId]) {
-              console.log('Creating paddle for', playerId)
-              graphics.paddle[playerId] = new Graphics()
-              app.stage.addChild(graphics.paddle[playerId])
-            }
-
-            const paddle = graphics.paddle[playerId]
-            paddle.clear()
-
-            const x = player.side === 'left' ? 20 : 780
-            paddle.rect(x - 10, player.y - 50, 20, 100)
-            paddle.fill(0x00ff00)
-          })
-
-          // Remove paddles for disconnected players
-          Object.keys(graphics.paddle).forEach((playerId) => {
-            if (!state.players[playerId]) {
-              app.stage.removeChild(graphics.paddle[playerId])
-              delete graphics.paddle[playerId]
-            }
-          })
-        }
 
         const submitInputs = () => {
           runtime.submitAction('move', {
@@ -113,7 +116,7 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
               hostId: transport.getCurrentHost() ?? undefined,
             },
           })
-          render()
+          render(app, gameGraphics, runtime.getState())
         })
 
         // Cleanup
