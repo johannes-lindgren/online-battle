@@ -194,6 +194,128 @@ const syncFromWorld = (
   return nextState
 }
 
+const initializeGame = async (
+  canvas: HTMLCanvasElement,
+  config: {
+    mode: 'host' | 'join'
+    roomId: string
+  }
+): Promise<() => void> => {
+  // Initialize Pixi Application
+  const app = new Application()
+
+  await app.init({
+    canvas: canvas,
+    width: 800,
+    height: 600,
+    backgroundColor: 0x1a1a1a,
+  })
+
+  // Invert Y-axis to match physics coordinate system (Y+ = up)
+  app.stage.scale.y = -1
+  app.stage.position.y = app.canvas.height
+
+  // Initialize martini-kit
+  const isDebug = true
+  const transport: Transport = isDebug
+    ? new LocalTransport({
+        roomId: config.roomId,
+        isHost: config.mode === 'host',
+      })
+    : new TrysteroTransport({
+        appId: 'online-armies-game',
+        roomId: config.roomId,
+        isHost: config.mode === 'host',
+      })
+  console.log('Joined as', config.mode, 'ID:', transport.getPlayerId())
+
+  const gravity = { x: 0.0, y: 0 }
+  const world = new RAPIER.World(gravity)
+
+  const game = createGame()
+
+  // Host starts with themselves in the game
+  // Client starts with empty game and waits for host to send state
+  const isHost = transport.isHost()
+
+  const runtime = new GameRuntime(game, transport, {
+    isHost: isHost,
+    playerIds: isHost ? [transport.getPlayerId()] : [],
+  })
+
+  const gameGraphics: GameGraphics = {
+    players: {},
+  }
+
+  const worldReferences: WorldReferences = {
+    playerToBody: new Map(),
+    bodyToPlayer: new Map(),
+  }
+
+  const keyTracker = keyDownTracker()
+
+  const submitInputs = () => {
+    const isUp = keyTracker.isKeyDown('KeyW') || keyTracker.isKeyDown('ArrowUp')
+    const isDown =
+      keyTracker.isKeyDown('KeyS') || keyTracker.isKeyDown('ArrowDown')
+    const isLeft =
+      keyTracker.isKeyDown('KeyA') || keyTracker.isKeyDown('ArrowLeft')
+    const isRight =
+      keyTracker.isKeyDown('KeyD') || keyTracker.isKeyDown('ArrowRight')
+
+    const leftSpeed = isLeft ? -1 : 0
+    const rightSpeed = isRight ? 1 : 0
+    const upSpeed = isUp ? 1 : 0
+    const downSpeed = isDown ? -1 : 0
+
+    runtime.submitAction('move', {
+      movingDirection: normalize({
+        x: leftSpeed + rightSpeed,
+        y: upSpeed + downSpeed,
+      }),
+    })
+    keyTracker.drainEventQueue()
+  }
+
+  app.ticker.add(() => {
+    submitInputs()
+
+    if (isHost) {
+      const currentState = runtime.getState()
+
+      // 1. Apply current state to the physics world
+      syncToWorld(world, currentState, worldReferences)
+
+      // 2. Step the physics simulation
+      world.step()
+
+      // 3. Compute the next state from the world
+      const nextState = syncFromWorld(world, worldReferences, currentState)
+
+      // Submit tick action with computed next state (host only)
+      runtime.submitAction('tick', {
+        nextState,
+        transport: {
+          thisId: transport.getPlayerId(),
+          peerIds: transport.getPeerIds(),
+        },
+      })
+    }
+
+    syncToPixi(app, gameGraphics, runtime.getState())
+  })
+
+  // Register cleanup on abort
+  return () => {
+    console.log('Cleaning up game...', transport.getPlayerId())
+    keyTracker.destroy()
+    app.stop()
+    // app.destroy()
+    runtime.destroy()
+    world.free()
+  }
+}
+
 export function Game({ mode, roomId, onBackToMenu }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -202,122 +324,11 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
       return
     }
 
-    // Initialize Pixi Application
-    const app = new Application()
+    const cleanupPromise = initializeGame(canvasRef.current, { mode, roomId })
 
-    app
-      .init({
-        canvas: canvasRef.current,
-        width: 800,
-        height: 600,
-        backgroundColor: 0x1a1a1a,
-      })
-      .then(() => {
-        // Invert Y-axis to match physics coordinate system (Y+ = up)
-        app.stage.scale.y = -1
-        app.stage.position.y = app.canvas.height
-        // Initialize martini-kit
-        const isDebug = true
-        const transport: Transport = isDebug
-          ? new LocalTransport({
-              roomId,
-              isHost: mode === 'host',
-            })
-          : new TrysteroTransport({
-              appId: 'online-armies-game',
-              roomId,
-              isHost: mode === 'host',
-            })
-        console.log('Joined as', mode, 'ID:', transport.getPlayerId())
-
-        const gravity = { x: 0.0, y: 0 }
-        const world = new RAPIER.World(gravity)
-
-        const game = createGame()
-
-        // Host starts with themselves in the game
-        // Client starts with empty game and waits for host to send state
-        const isHost = transport.isHost()
-
-        const runtime = new GameRuntime(game, transport, {
-          isHost: isHost,
-          playerIds: isHost ? [transport.getPlayerId()] : [],
-        })
-
-        const gameGraphics: GameGraphics = {
-          players: {},
-        }
-
-        const worldReferences: WorldReferences = {
-          playerToBody: new Map(),
-          bodyToPlayer: new Map(),
-        }
-
-        const keyTracker = keyDownTracker()
-
-        const submitInputs = () => {
-          const isUp =
-            keyTracker.isKeyDown('KeyW') || keyTracker.isKeyDown('ArrowUp')
-          const isDown =
-            keyTracker.isKeyDown('KeyS') || keyTracker.isKeyDown('ArrowDown')
-          const isLeft =
-            keyTracker.isKeyDown('KeyA') || keyTracker.isKeyDown('ArrowLeft')
-          const isRight =
-            keyTracker.isKeyDown('KeyD') || keyTracker.isKeyDown('ArrowRight')
-
-          const leftSpeed = isLeft ? -1 : 0
-          const rightSpeed = isRight ? 1 : 0
-          const upSpeed = isUp ? 1 : 0
-          const downSpeed = isDown ? -1 : 0
-
-          runtime.submitAction('move', {
-            movingDirection: normalize({
-              x: leftSpeed + rightSpeed,
-              y: upSpeed + downSpeed,
-            }),
-          })
-          keyTracker.drainEventQueue()
-        }
-
-        // Add render loop that runs every frame for smooth rendering
-        app.ticker.add(() => {
-          submitInputs()
-
-          if (isHost) {
-            const currentState = runtime.getState()
-
-            // 1. Apply current state to the physics world
-            syncToWorld(world, currentState, worldReferences)
-
-            // 2. Step the physics simulation
-            world.step()
-
-            // 3. Compute the next state from the world
-            const nextState = syncFromWorld(
-              world,
-              worldReferences,
-              currentState
-            )
-
-            // Submit tick action with computed next state
-            runtime.submitAction('tick', {
-              nextState,
-              transport: {
-                thisId: transport.getPlayerId(),
-                peerIds: transport.getPeerIds(),
-              },
-            })
-          }
-
-          syncToPixi(app, gameGraphics, runtime.getState())
-        })
-
-        // Cleanup
-        return () => {
-          app.destroy(true, { children: true })
-          keyTracker.destroy()
-        }
-      })
+    return () => {
+      cleanupPromise.then((cleanup) => cleanup())
+    }
   }, [mode, roomId])
 
   return (
