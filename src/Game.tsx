@@ -1,4 +1,4 @@
-import { defineGame } from '@martini-kit/core'
+import { defineGame, createPlayerManager } from '@martini-kit/core'
 import { vector } from './math/vector.ts'
 
 type Vec2 = { x: number; y: number }
@@ -6,6 +6,12 @@ type Vec2 = { x: number; y: number }
 type Player = {
   position: Vec2
 }
+
+const playerManager = createPlayerManager<Player>({
+  factory: (_playerId, index) => ({
+    position: vector(index * 50, 300),
+  }),
+})
 
 export interface GameState {
   players: Record<string, Player>
@@ -20,23 +26,13 @@ export interface GameState {
 export const createGame = () =>
   defineGame<GameState>({
     setup: ({ playerIds }) => ({
-      players: Object.fromEntries(
-        playerIds.map((id, index) => [
-          id,
-          {
-            position: vector(100 * index, 300),
-          },
-        ])
-      ),
+      players: playerManager.initialize(playerIds),
       inputs: {},
     }),
-
     actions: {
       move: {
         apply: (state, context, input: { movingDirection: Vec2 }) => {
-          if (!state.inputs) {
-            state.inputs = {}
-          }
+          // console.log('Received move input from', context.targetId, input)
           state.inputs[context.targetId] = input
         },
       },
@@ -63,27 +59,24 @@ export const createGame = () =>
           // Apply the computed next state from physics simulation
           Object.assign(state, nextState)
 
-          const allPlayerIds = [transport.thisId, ...transport.peerIds]
-          allPlayerIds.forEach((peerId, index) => {
-            // Manually trigger onPlayerJoin by mutating state
-            if (!state.players[peerId]) {
-              state.players[peerId] = {
-                position: { x: index * 100, y: 300 },
-              }
-            }
-          })
+          // const allPlayerIds = [transport.thisId, ...transport.peerIds]
+          // allPlayerIds.forEach((peerId, index) => {
+          //   // Manually trigger onPlayerJoin by mutating state
+          //   if (!state.players[peerId]) {
+          //     state.players[peerId] = {
+          //       position: { x: index * 50, y: 300 },
+          //     }
+          //   }
+          // })
         },
       },
     },
-
     onPlayerJoin: (state, playerId) => {
-      const playerCount = Object.keys(state.players).length
-      state.players[playerId] = {
-        position: { x: playerCount * 100, y: 300 },
-      }
+      console.log('Player joined:', playerId)
+      playerManager.handleJoin(state.players, playerId)
     },
 
     onPlayerLeave: (state, playerId) => {
-      delete state.players[playerId]
+      playerManager.handleLeave(state.players, playerId)
     },
   })

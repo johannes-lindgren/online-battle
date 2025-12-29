@@ -1,21 +1,20 @@
-import { useEffect, useRef } from 'react'
-import { GameRuntime, type Transport } from '@martini-kit/core'
-import { Application, Graphics, type Renderer } from 'pixi.js'
+import { useEffect, useRef, useState } from 'react'
+import { type ConnectionState, GameRuntime } from '@martini-kit/core'
+import { Application, Container, Graphics, Text, type Renderer } from 'pixi.js'
 import { TrysteroTransport } from '@martini-kit/transport-trystero'
 import { createGame, type GameState } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
 import { normalize, scale } from './math/vector.ts'
-import { LocalTransport } from '@martini-kit/transport-local'
 
 interface GameProps {
-  mode: 'host' | 'join'
+  mode: 'host' | 'client'
   roomId: string
   onBackToMenu: () => void
 }
 
 type GameGraphics = {
-  players: Record<string, Graphics>
+  players: Record<string, Container>
 }
 
 // Get or create graphics for a player
@@ -23,13 +22,35 @@ const getOrCreatePlayerGraphics = (
   app: Application<Renderer>,
   gameGraphics: GameGraphics,
   playerId: string
-): Graphics => {
+): Container => {
   if (!gameGraphics.players[playerId]) {
+    // Create a container to hold both the circle and text
+    const container = new Container()
+
+    // Create the circle graphic
     const paddleGraphic = new Graphics()
     paddleGraphic.circle(0, 0, 20) // Draw circle with radius 20
     paddleGraphic.fill(0x00ff00)
-    app.stage.addChild(paddleGraphic)
-    gameGraphics.players[playerId] = paddleGraphic
+
+    // Create the text label with player ID
+    const text = new Text({
+      text: playerId.slice(7),
+      style: {
+        fontSize: 12,
+        fill: 0xffffff,
+        align: 'center',
+      },
+    })
+    // Center the text and flip it vertically (since Y-axis is inverted)
+    text.anchor.set(0.5, 0.5)
+    text.scale.y = -1 // Flip text vertically to counteract the inverted Y-axis
+
+    // Add both to the container
+    container.addChild(paddleGraphic)
+    container.addChild(text)
+
+    app.stage.addChild(container)
+    gameGraphics.players[playerId] = container
   }
   return gameGraphics.players[playerId]
 }
@@ -197,9 +218,11 @@ const syncFromWorld = (
 const initializeGame = async (
   canvas: HTMLCanvasElement,
   config: {
-    mode: 'host' | 'join'
+    mode: 'host' | 'client'
     roomId: string
-  }
+  },
+  setPlayers: (playerIds: string[]) => void,
+  setConnection: (state: ConnectionState) => void
 ): Promise<() => void> => {
   // Initialize Pixi Application
   const app = new Application()
@@ -215,18 +238,32 @@ const initializeGame = async (
   app.stage.scale.y = -1
   app.stage.position.y = app.canvas.height
 
+  console.log('joining as ', config.mode)
   // Initialize martini-kit
-  const isDebug = true
-  const transport: Transport = isDebug
-    ? new LocalTransport({
-        roomId: config.roomId,
-        isHost: config.mode === 'host',
-      })
-    : new TrysteroTransport({
-        appId: 'online-armies-game',
-        roomId: config.roomId,
-        isHost: config.mode === 'host',
-      })
+  const transport = new TrysteroTransport({
+    appId: 'online-armies-game',
+    roomId: config.roomId,
+    isHost: config.mode === 'host',
+  })
+  console.log('connection state:', transport.getConnectionState())
+
+  const handlePlayersChange = () => {
+    setPlayers([transport.getPlayerId(), ...transport.getPeerIds()])
+  }
+  transport.onPeerJoin(handlePlayersChange)
+  transport.onPeerLeave(handlePlayersChange)
+  handlePlayersChange()
+  transport.onConnectionChange((state) => {
+    console.log('Connection changed!!')
+    setConnection(state)
+  })
+
+  console.log('current host', transport.getCurrentHost())
+  console.log('Connecting to room:', config.roomId, 'as', config.mode)
+  await transport.waitForReady()
+  console.log('connection state:', transport.getConnectionState())
+  console.log('Connected to room:', config.roomId)
+
   console.log('Joined as', config.mode, 'ID:', transport.getPlayerId())
 
   const gravity = { x: 0.0, y: 0 }
@@ -236,12 +273,22 @@ const initializeGame = async (
 
   // Host starts with themselves in the game
   // Client starts with empty game and waits for host to send state
-  const isHost = transport.isHost()
+
+  console.log('thisId=', transport.getPlayerId())
+  console.log('hostId=', transport.getCurrentHost())
+  console.log('initializeGame: isHost=', transport.isHost())
 
   const runtime = new GameRuntime(game, transport, {
-    isHost: isHost,
-    playerIds: isHost ? [transport.getPlayerId()] : [],
+    isHost: transport.isHost(),
+    playerIds: [transport.getPlayerId()],
   })
+
+  console.log(
+    'isHost runtime=',
+    runtime.isHost(),
+    'transport=',
+    transport.isHost()
+  )
 
   const gameGraphics: GameGraphics = {
     players: {},
@@ -280,19 +327,20 @@ const initializeGame = async (
   app.ticker.add(() => {
     submitInputs()
 
-    if (isHost) {
-      const currentState = runtime.getState()
+    const currentState = runtime.getState()
 
-      // 1. Apply current state to the physics world
-      syncToWorld(world, currentState, worldReferences)
+    // 1. Apply current state to the physics world
+    syncToWorld(world, currentState, worldReferences)
 
-      // 2. Step the physics simulation
-      world.step()
+    // 2. Step the physics simulation
+    world.step()
 
-      // 3. Compute the next state from the world
-      const nextState = syncFromWorld(world, worldReferences, currentState)
+    // 3. Compute the next state from the world
+    const nextState = syncFromWorld(world, worldReferences, currentState)
 
-      // Submit tick action with computed next state (host only)
+    // Submit tick action with computed next state (host only)
+    if (transport.isHost()) {
+      console.log('I am the host, submitting tick')
       runtime.submitAction('tick', {
         nextState,
         transport: {
@@ -300,9 +348,11 @@ const initializeGame = async (
           peerIds: transport.getPeerIds(),
         },
       })
+    } else {
+      console.log('I am a client, not submitting tick')
     }
 
-    syncToPixi(app, gameGraphics, runtime.getState())
+    syncToPixi(app, gameGraphics, nextState)
   })
 
   // Register cleanup on abort
@@ -318,13 +368,20 @@ const initializeGame = async (
 
 export function Game({ mode, roomId, onBackToMenu }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [playerIds, setPlayerIds] = useState<string[]>([])
+  const [connection, setConnection] = useState<ConnectionState>('connecting')
 
   useEffect(() => {
     if (!canvasRef.current) {
       return
     }
 
-    const cleanupPromise = initializeGame(canvasRef.current, { mode, roomId })
+    const cleanupPromise = initializeGame(
+      canvasRef.current,
+      { mode, roomId },
+      setPlayerIds,
+      setConnection
+    )
 
     return () => {
       cleanupPromise.then((cleanup) => cleanup())
@@ -337,19 +394,39 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
         style={{
           marginBottom: '10px',
           padding: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
         }}
       >
         <button onClick={onBackToMenu} style={{ padding: '5px 10px' }}>
           ← Back to Menu
         </button>
-        <span style={{ marginLeft: '20px' }}>
+        <span
+          style={{
+            borderRadius: '50%',
+            backgroundColor: connectionColors[connection],
+            display: 'inline-block',
+            width: '10px',
+            height: '10px',
+          }}
+          title={`Connection status: ${connection}`}
+        />
+        <span>
           {mode === 'host' ? '🎮 Hosting' : '👥 Joined'} - Room: {roomId}
         </span>
-        <span style={{ marginLeft: '20px', fontSize: '12px', color: '#aaa' }}>
-          Press W/S or Arrow Keys to move
-        </span>
+        <span style={{ marginLeft: '20px' }}>Players: {playerIds.length}</span>
       </div>
       <canvas ref={canvasRef} />
+      <span style={{ marginLeft: '20px', fontSize: '12px', color: '#aaa' }}>
+        Press W/S or Arrow Keys to move
+      </span>
     </div>
   )
+}
+
+const connectionColors: Record<ConnectionState, string> = {
+  connected: 'green',
+  connecting: 'orange',
+  disconnected: 'red',
 }
