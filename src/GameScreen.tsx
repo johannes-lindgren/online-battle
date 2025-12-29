@@ -280,7 +280,7 @@ const initializeGame = async (
 
   const runtime = new GameRuntime(game, transport, {
     isHost: transport.isHost(),
-    playerIds: [transport.getPlayerId()],
+    playerIds: transport.isHost() ? [transport.getPlayerId()] : [],
   })
 
   console.log(
