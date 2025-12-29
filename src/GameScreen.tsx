@@ -6,6 +6,16 @@ import { createGame, type GameState } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
 import { normalize, scale } from './math/vector.ts'
+import { wait } from './utils/wait.ts'
+import { joinRoom } from 'trystero/mqtt' // (trystero-mqtt.min.js with a local file)
+
+const environment = {
+  mqttUrl: import.meta.env.VITE_MQTT_URL,
+  turn: {
+    realm: import.meta.env.VITE_REALM,
+    host: import.meta.env.VITE_TURN_HOST,
+  },
+}
 
 interface GameProps {
   mode: 'host' | 'client'
@@ -240,27 +250,72 @@ const initializeGame = async (
 
   console.log('joining as ', config.mode)
   // Initialize martini-kit
+  const appId = 'online-armies-game'
   const transport = new TrysteroTransport({
     appId: 'online-armies-game',
     roomId: config.roomId,
     isHost: config.mode === 'host',
+    // relayUrls: [environment.mqttUrl],
+    rtcConfig: {
+      iceServers: [
+        // {
+        //   urls: [
+        //     'stun:stun.l.google.com:19302',
+        //     'stun:stun1.l.google.com:19302',
+        //   ],
+        // },
+        // {
+        //   urls: [`turn:${environment.turn.host}:3478`],
+        // },
+      ],
+    },
+  })
+
+  const room = joinRoom(
+    {
+      appId,
+    },
+    'yoyodyne'
+  )
+
+  const clientTransport = new TrysteroTransport({
+    appId: 'online-armies-game',
+    roomId: config.roomId,
+    isHost: false,
   })
   console.log('connection state:', transport.getConnectionState())
 
   const handlePlayersChange = () => {
     setPlayers([transport.getPlayerId(), ...transport.getPeerIds()])
   }
+  const handleConnectionChange = () => {
+    console.log('connection state changed:', transport.getConnectionState())
+    console.log(
+      'client connection state:',
+      clientTransport.getConnectionState()
+    )
+    const room = transport.getRoom()
+    setConnection(transport.getConnectionState())
+  }
+
+  const intervalHandle = setInterval(() => {
+    handleConnectionChange()
+  }, 1000)
+
+  // await wait(10 * 1000)
+
   transport.onPeerJoin(handlePlayersChange)
   transport.onPeerLeave(handlePlayersChange)
   handlePlayersChange()
-  transport.onConnectionChange((state) => {
-    console.log('Connection changed!!')
-    setConnection(state)
-  })
+  transport.onConnectionChange(handleConnectionChange)
+  handleConnectionChange()
 
+  console.log('set up timer')
+
+  console.log('setting up transport metrics logger')
   console.log('current host', transport.getCurrentHost())
   console.log('Connecting to room:', config.roomId, 'as', config.mode)
-  await transport.waitForReady()
+  // await transport.waitForReady()
   console.log('connection state:', transport.getConnectionState())
   console.log('Connected to room:', config.roomId)
 
@@ -340,7 +395,7 @@ const initializeGame = async (
 
     // Submit tick action with computed next state (host only)
     if (transport.isHost()) {
-      console.log('I am the host, submitting tick')
+      // console.log('I am the host, submitting tick')
       runtime.submitAction('tick', {
         nextState,
         transport: {
@@ -349,7 +404,7 @@ const initializeGame = async (
         },
       })
     } else {
-      console.log('I am a client, not submitting tick')
+      // console.log('I am a client, not submitting tick')
     }
 
     syncToPixi(app, gameGraphics, nextState)
@@ -363,6 +418,8 @@ const initializeGame = async (
     // app.destroy()
     runtime.destroy()
     world.free()
+    console.log('cancelled timer')
+    clearInterval(intervalHandle)
   }
 }
 
@@ -376,6 +433,7 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
       return
     }
 
+    console.log('initializing game...', mode, roomId)
     const cleanupPromise = initializeGame(
       canvasRef.current,
       { mode, roomId },
@@ -413,7 +471,7 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
           title={`Connection status: ${connection}`}
         />
         <span>
-          {mode === 'host' ? '🎮 Hosting' : '👥 Joined'} - Room: {roomId}
+          {mode === 'host' ? '🎮 Hosting' : '👥 Joined'} <code>{roomId}</code>
         </span>
         <span style={{ marginLeft: '20px' }}>Players: {playerIds.length}</span>
       </div>

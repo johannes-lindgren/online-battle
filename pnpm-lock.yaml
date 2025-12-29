@@ -29,6 +29,9 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.2.3(react@19.2.3)
+      trystero:
+        specifier: ^0.22.0
+        version: 0.22.0(@multiformats/multiaddr@12.5.1)
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.1
@@ -3016,7 +3019,7 @@ snapshots:
 
   '@libp2p/peer-id@5.1.7':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.13
       '@libp2p/interface': 2.11.0
       multiformats: 13.4.2
       uint8arrays: 5.1.0

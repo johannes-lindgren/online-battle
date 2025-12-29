@@ -104,8 +104,9 @@ export const norm1 = (v: Vec): number => {
 
 export const dot = <V extends Vec>(v1: V, v2: V): number => {
   let acc = 0
-  for (let i = 0; i < v1.length; i++) {
-    acc += v1[i] * v2[i]
+  const minLength = Math.min(v1.length, v2.length)
+  for (let i = 0; i < minLength; i++) {
+    acc += v1[i]! * v2[i]!
   }
   return acc
 }

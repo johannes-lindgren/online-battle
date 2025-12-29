@@ -5,11 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "check:types": "tsc -b --noEmit",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "turn:up": "docker compose up -d",
+    "turn:down": "docker compose down",
+    "turn:logs": "docker compose logs -f coturn"
   },
   "dependencies": {
+    "trystero": "^0.22.0",
     "@dimforge/rapier2d": "^0.19.3",
     "@martini-kit/core": "0.1.1",
     "@martini-kit/transport-local": "0.1.1",

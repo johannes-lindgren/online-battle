@@ -17,7 +17,7 @@ type AppState =
 export function App() {
   const [appState, setAppState] = useState<AppState>({
     room: 'menu',
-    roomId: 'paddle-battle-room',
+    roomId: 'paddle-battle-room-1',
   })
 
   const handleStartGame = (mode: 'host' | 'join') => {
