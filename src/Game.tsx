@@ -32,3 +32,5 @@ export function handlePlayerLeave(state: GameState, playerId: string): void {
   delete state.players[playerId]
   delete state.inputs[playerId]
 }
+
+// TODO: REMOVE THIS COMMENT (AND JOHANNES)
