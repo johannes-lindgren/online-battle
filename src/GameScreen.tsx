@@ -17,7 +17,7 @@ import {
   syncFromWorld,
   syncToWorld,
 } from './simulation.tsx'
-import { normalize, normalized, origo, type Vector2 } from './math/Vector2.ts'
+import {  normalized, origo } from './math/Vector2.ts'
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected'
 
