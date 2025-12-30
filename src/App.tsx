@@ -10,17 +10,17 @@ type AppState =
     }
   | {
       room: 'game'
-      mode: 'host' | 'join'
+      mode: 'host' | 'client'
       roomId: string
     }
 
 export function App() {
   const [appState, setAppState] = useState<AppState>({
     room: 'menu',
-    roomId: 'paddle-battle-room',
+    roomId: 'paddle-battle-room-1',
   })
 
-  const handleStartGame = (mode: 'host' | 'join') => {
+  const handleStartGame = (mode: 'host' | 'client') => {
     setAppState({ room: 'game', mode, roomId: appState.roomId })
   }
 

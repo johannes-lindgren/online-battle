@@ -1,0 +1,35 @@
+# Docker Compose v2 (version key is obsolete)
+
+services:
+  coturn:
+    build:
+      context: .
+      dockerfile: Dockerfile.turn
+    image: local/coturn:arm64
+    platform: linux/arm64
+    container_name: coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"    # STUN/TURN UDP
+      - "3478:3478/tcp"    # STUN/TURN TCP
+      - "5349:5349/tcp"    # TURN over TLS (optional)
+      - "49152-49252:49152-49252/udp" # TURN relay ports
+    environment:
+      - TURN_REALM=${TURN_REALM}
+      - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
+      - TURN_LISTEN_IP=0.0.0.0
+      - TURN_MIN_PORT=49152
+      - TURN_MAX_PORT=49252
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    healthcheck:
+      test: ["CMD", "turnadmin", "-l"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# Notes:
+# - Built locally for arm64 to avoid image platform mismatches.
+# - Expose UDP range 49152-49252 in firewall/NAT if needed
+# - Set TURN_PUBLIC_IP to your external IP or DNS name
+# - For local development behind NAT, you can set TURN_PUBLIC_IP to host's IP

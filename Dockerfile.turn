@@ -1,0 +1,13 @@
+# Arm64-friendly coturn image built on Alpine
+FROM alpine:3.20
+
+RUN apk add --no-cache coturn bash
+
+# Create log dir expected by config
+RUN mkdir -p /var/log
+
+# Expose ports (informational; actual mapping occurs in compose/run)
+EXPOSE 3478/udp 3478/tcp 5349/tcp 49152-49252/udp
+
+# Entrypoint: run turnserver with config file; environment vars supplied by compose/run
+ENTRYPOINT ["/usr/bin/turnserver", "-c", "/etc/turnserver.conf"]

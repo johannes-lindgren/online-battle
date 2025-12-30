@@ -1,11 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
-import { type ConnectionState, GameRuntime } from '@martini-kit/core'
-import { Application, Container, Graphics, Text, type Renderer } from 'pixi.js'
-import { TrysteroTransport } from '@martini-kit/transport-trystero'
-import { createGame, type GameState } from './Game'
+import { Application, Container, Graphics, type Renderer, Text } from 'pixi.js'
+import { joinRoom } from 'trystero/mqtt'
+import { selfId } from 'trystero'
+import {
+  createInitialState,
+  type GameState,
+  handlePlayerJoin,
+  handlePlayerLeave,
+  type PlayerInput,
+} from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
-import { normalize, scale } from './math/vector.ts'
+import {
+  applyInput,
+  createWorldReferences,
+  syncFromWorld,
+  syncToWorld,
+} from './simulation.tsx'
+import { normalize, normalized, origo, type Vector2 } from './math/Vector2.ts'
+
+type ConnectionState = 'connected' | 'connecting' | 'disconnected'
 
 interface GameProps {
   mode: 'host' | 'client'
@@ -13,206 +27,100 @@ interface GameProps {
   onBackToMenu: () => void
 }
 
-type GameGraphics = {
-  players: Record<string, Container>
+type PixiReferences = {
+  playerToBody: Map<string, Container>
+  bodyToPlayer: WeakMap<Container, string>
+}
+
+const createPixiReferences = (): PixiReferences => ({
+  playerToBody: new Map(),
+  bodyToPlayer: new WeakMap(),
+})
+
+const addPixiReference = (
+  pixiReferences: PixiReferences,
+  playerId: string,
+  container: Container
+) => {
+  pixiReferences.playerToBody.set(playerId, container)
+  pixiReferences.bodyToPlayer.set(container, playerId)
+}
+
+const removePixiReference = (
+  pixiReferences: PixiReferences,
+  playerId: string
+) => {
+  const container = pixiReferences.playerToBody.get(playerId)
+  if (container !== undefined) {
+    pixiReferences.bodyToPlayer.delete(container)
+  }
+  pixiReferences.playerToBody.delete(playerId)
 }
 
 // Get or create graphics for a player
 const getOrCreatePlayerGraphics = (
   app: Application<Renderer>,
-  gameGraphics: GameGraphics,
+  pixiReferences: PixiReferences,
   playerId: string
 ): Container => {
-  if (!gameGraphics.players[playerId]) {
-    // Create a container to hold both the circle and text
-    const container = new Container()
-
-    // Create the circle graphic
-    const paddleGraphic = new Graphics()
-    paddleGraphic.circle(0, 0, 20) // Draw circle with radius 20
-    paddleGraphic.fill(0x00ff00)
-
-    // Create the text label with player ID
-    const text = new Text({
-      text: playerId.slice(7),
-      style: {
-        fontSize: 12,
-        fill: 0xffffff,
-        align: 'center',
-      },
-    })
-    // Center the text and flip it vertically (since Y-axis is inverted)
-    text.anchor.set(0.5, 0.5)
-    text.scale.y = -1 // Flip text vertically to counteract the inverted Y-axis
-
-    // Add both to the container
-    container.addChild(paddleGraphic)
-    container.addChild(text)
-
-    app.stage.addChild(container)
-    gameGraphics.players[playerId] = container
+  const existing = pixiReferences.playerToBody.get(playerId)
+  if (existing) {
+    return existing
   }
-  return gameGraphics.players[playerId]
+  // Create a container to hold both the circle and text
+  const container = new Container()
+
+  // Create the circle graphic
+  const paddleGraphic = new Graphics()
+  paddleGraphic.circle(0, 0, 20) // Draw circle with radius 20
+  paddleGraphic.fill(0xaa0000)
+
+  // Create the text label with player ID
+  const text = new Text({
+    text: playerId.slice(0, 4),
+    style: {
+      fontSize: 12,
+      fill: 0xffffff,
+      align: 'center',
+    },
+  })
+  // Center the text and flip it vertically (since Y-axis is inverted)
+  text.anchor.set(0.5, 0.5)
+  text.scale.y = -1 // Flip text vertically to counteract the inverted Y-axis
+
+  // Add both to the container
+  container.addChild(paddleGraphic)
+  container.addChild(text)
+
+  app.stage.addChild(container)
+  addPixiReference(pixiReferences, playerId, container)
+  return container
 }
 
 // Render function - updates Pixi graphics from current state
 const syncToPixi = (
   app: Application<Renderer>,
-  gameGraphics: GameGraphics,
+  pixiReferences: PixiReferences,
   state: GameState
 ) => {
-  // First loop: Create graphics for new players
+  // Add or update player graphics
   Object.entries(state.players).forEach(([playerId, player]) => {
     const playerGraphics = getOrCreatePlayerGraphics(
       app,
-      gameGraphics,
+      pixiReferences,
       playerId
     )
     playerGraphics.position.set(player.position.x, player.position.y)
   })
-}
 
-// Bidirectional mapping between playerIds and rigid body handles
-export type WorldReferences = {
-  playerToBody: Map<string, RAPIER.RigidBodyHandle>
-  bodyToPlayer: Map<RAPIER.RigidBodyHandle, string>
-}
-
-// Add a reference to worldReferences
-const addReference = (
-  worldReferences: WorldReferences,
-  playerId: string,
-  handle: RAPIER.RigidBodyHandle
-) => {
-  worldReferences.playerToBody.set(playerId, handle)
-  worldReferences.bodyToPlayer.set(handle, playerId)
-}
-
-// Remove a reference from worldReferences
-const removeReference = (
-  worldReferences: WorldReferences,
-  playerId: string
-) => {
-  const handle = worldReferences.playerToBody.get(playerId)
-  if (handle !== undefined) {
-    worldReferences.bodyToPlayer.delete(handle)
-  }
-  worldReferences.playerToBody.delete(playerId)
-}
-
-// Get or create rigid body for a player
-const getOrCreateRigidBody = (
-  world: RAPIER.World,
-  worldReferences: WorldReferences,
-  playerId: string,
-  position: { x: number; y: number }
-): RAPIER.RigidBody => {
-  const existingHandle = worldReferences.playerToBody.get(playerId)
-  if (existingHandle !== undefined) {
-    const rigidBody = world.getRigidBody(existingHandle)
-    if (rigidBody) {
-      return rigidBody
-    }
-  }
-
-  // Create new rigid body for this player as a ball
-  const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
-    .setTranslation(position.x, position.y)
-    .setLinearDamping(5.0) // Add damping to slow down over time (5.0 = strong air resistance)
-
-  const rigidBody = world.createRigidBody(rigidBodyDesc)
-  const handle = rigidBody.handle
-
-  // Add a ball collider with radius 20 and friction
-  const colliderDesc = RAPIER.ColliderDesc.ball(20)
-    .setFriction(0.5) // Add friction for contact with surfaces
-    .setRestitution(0.3) // Add some bounciness (0 = no bounce, 1 = perfect bounce)
-  world.createCollider(colliderDesc, rigidBody)
-
-  // Store bidirectional mapping
-  addReference(worldReferences, playerId, handle)
-
-  console.log(`Created rigid body for player ${playerId}, handle: ${handle}`)
-  return rigidBody
-}
-
-const syncToWorld = (
-  world: RAPIER.World,
-  state: GameState,
-  worldReferences: WorldReferences
-) => {
-  // First loop: Create rigid bodies for new players
-  Object.entries(state.players).forEach(([playerId, player]) => {
-    getOrCreateRigidBody(world, worldReferences, playerId, player.position)
-  })
-
-  // Second loop: Apply new forces based on player inputs
-  Object.entries(state.players).forEach(([playerId]) => {
-    const handle = worldReferences.playerToBody.get(playerId)
-    if (handle === undefined) {
+  // Remove graphics for players that have left
+  pixiReferences.playerToBody.forEach((container, playerId) => {
+    if (playerId in state.players) {
       return
     }
-    const rigidBody = world.getRigidBody(handle)
-    if (!rigidBody) {
-      return
-    }
-
-    // Clear persistent forces from previous frames
-    rigidBody.resetForces(true)
-
-    // Apply new force based on current input
-    const input = state.inputs[playerId]
-    if (input) {
-      const forceMultiplier = 1000000.0
-      rigidBody.addForce(scale(input.movingDirection, forceMultiplier), true)
-    }
+    app.stage.removeChild(container)
+    removePixiReference(pixiReferences, playerId)
   })
-
-  // Third loop: Remove rigid bodies for disconnected players
-  worldReferences.playerToBody.forEach((handle, playerId) => {
-    if (!state.players[playerId]) {
-      const rigidBody = world.getRigidBody(handle)
-      if (rigidBody) {
-        world.removeRigidBody(rigidBody)
-      }
-      removeReference(worldReferences, playerId)
-      console.log(`Removed rigid body for player ${playerId}`)
-    }
-  })
-}
-
-const syncFromWorld = (
-  world: RAPIER.World,
-  worldReferences: WorldReferences,
-  currentState: GameState
-): GameState => {
-  // Create a new state with updated positions from physics
-  const nextState: GameState = {
-    ...currentState,
-    players: {},
-  }
-
-  // Copy all players with updated positions from the physics world
-  Object.keys(currentState.players).forEach((playerId) => {
-    const handle = worldReferences.playerToBody.get(playerId)
-    const rigidBody = handle !== undefined ? world.getRigidBody(handle) : null
-
-    if (rigidBody) {
-      const position = rigidBody.translation()
-      nextState.players[playerId] = {
-        ...currentState.players[playerId],
-        position: { x: position.x, y: position.y },
-      }
-    } else {
-      // Keep original position if no physics body exists
-      const player = currentState.players[playerId]
-      if (player) {
-        nextState.players[playerId] = player
-      }
-    }
-  })
-
-  return nextState
 }
 
 const initializeGame = async (
@@ -238,70 +146,86 @@ const initializeGame = async (
   app.stage.scale.y = -1
   app.stage.position.y = app.canvas.height
 
-  console.log('joining as ', config.mode)
-  // Initialize martini-kit
-  const transport = new TrysteroTransport({
-    appId: 'online-armies-game',
-    roomId: config.roomId,
-    isHost: config.mode === 'host',
+  console.log('joining as:', config.mode)
+
+  console.log('Joining room:', config.roomId)
+  const room = joinRoom(
+    {
+      appId: 'online-armies-game',
+    },
+    config.roomId
+  )
+
+  const isHost = config.mode === 'host'
+  const [sendInput, receiveInput] = room.makeAction<PlayerInput>('move')
+  const [sendState, receiveState] = room.makeAction<GameState>('state')
+
+  // TODO manage on host
+  const peerIds = new Set<string>()
+
+  let currentState: GameState = createInitialState(isHost ? [selfId] : [])
+
+  room.onPeerJoin((peerId) => {
+    console.log('Peer joined:', peerId)
+    if (!isHost) {
+      return
+    }
+    peerIds.add(peerId)
+    handlePlayerJoin(currentState, peerId)
+    handlePlayersChange()
+    if (isHost) {
+      sendState(currentState, peerId)
+    }
   })
-  console.log('connection state:', transport.getConnectionState())
+
+  room.onPeerLeave((peerId) => {
+    console.log('Peer left:', peerId)
+    if (!isHost) {
+      return
+    }
+    peerIds.delete(peerId)
+    handlePlayerLeave(currentState, peerId)
+    handlePlayersChange()
+  })
 
   const handlePlayersChange = () => {
-    setPlayers([transport.getPlayerId(), ...transport.getPeerIds()])
+    const allIds = [selfId, ...Array.from(peerIds)]
+    setPlayers(allIds)
   }
-  transport.onPeerJoin(handlePlayersChange)
-  transport.onPeerLeave(handlePlayersChange)
-  handlePlayersChange()
-  transport.onConnectionChange((state) => {
-    console.log('Connection changed!!')
+
+  const handleConnectionChange = () => {
+    const state: ConnectionState =
+      peerIds.size > 0 || isHost ? 'connected' : 'connecting'
     setConnection(state)
+  }
+
+  handlePlayersChange()
+  handleConnectionChange()
+
+  receiveInput((data, peerId) => {
+    if (!isHost) {
+      return
+    }
+    applyInput(currentState, peerId, data)
   })
 
-  console.log('current host', transport.getCurrentHost())
-  console.log('Connecting to room:', config.roomId, 'as', config.mode)
-  await transport.waitForReady()
-  console.log('connection state:', transport.getConnectionState())
-  console.log('Connected to room:', config.roomId)
-
-  console.log('Joined as', config.mode, 'ID:', transport.getPlayerId())
+  receiveState((nextState) => {
+    if (isHost) {
+      return
+    }
+    currentState = nextState
+  })
 
   const gravity = { x: 0.0, y: 0 }
   const world = new RAPIER.World(gravity)
 
-  const game = createGame()
+  const pixiReferences: PixiReferences = createPixiReferences()
 
-  // Host starts with themselves in the game
-  // Client starts with empty game and waits for host to send state
-
-  console.log('thisId=', transport.getPlayerId())
-  console.log('hostId=', transport.getCurrentHost())
-  console.log('initializeGame: isHost=', transport.isHost())
-
-  const runtime = new GameRuntime(game, transport, {
-    isHost: transport.isHost(),
-    playerIds: transport.isHost() ? [transport.getPlayerId()] : [],
-  })
-
-  console.log(
-    'isHost runtime=',
-    runtime.isHost(),
-    'transport=',
-    transport.isHost()
-  )
-
-  const gameGraphics: GameGraphics = {
-    players: {},
-  }
-
-  const worldReferences: WorldReferences = {
-    playerToBody: new Map(),
-    bodyToPlayer: new Map(),
-  }
+  const worldReferences = createWorldReferences()
 
   const keyTracker = keyDownTracker()
 
-  const submitInputs = () => {
+  const getOwnInput = (): PlayerInput => {
     const isUp = keyTracker.isKeyDown('KeyW') || keyTracker.isKeyDown('ArrowUp')
     const isDown =
       keyTracker.isKeyDown('KeyS') || keyTracker.isKeyDown('ArrowDown')
@@ -315,54 +239,40 @@ const initializeGame = async (
     const upSpeed = isUp ? 1 : 0
     const downSpeed = isDown ? -1 : 0
 
-    runtime.submitAction('move', {
-      movingDirection: normalize({
-        x: leftSpeed + rightSpeed,
-        y: upSpeed + downSpeed,
-      }),
-    })
-    keyTracker.drainEventQueue()
+    return {
+      movingDirection:
+        normalized({
+          x: leftSpeed + rightSpeed,
+          y: upSpeed + downSpeed,
+        }) ?? origo,
+    }
   }
 
   app.ticker.add(() => {
-    submitInputs()
+    // Process own input.
+    const ownInput = getOwnInput()
+    applyInput(currentState, selfId, ownInput)
+    sendInput(ownInput)
+    keyTracker.drainEventQueue()
 
-    const currentState = runtime.getState()
-
-    // 1. Apply current state to the physics world
     syncToWorld(world, currentState, worldReferences)
-
-    // 2. Step the physics simulation
     world.step()
-
-    // 3. Compute the next state from the world
     const nextState = syncFromWorld(world, worldReferences, currentState)
 
-    // Submit tick action with computed next state (host only)
-    if (transport.isHost()) {
-      console.log('I am the host, submitting tick')
-      runtime.submitAction('tick', {
-        nextState,
-        transport: {
-          thisId: transport.getPlayerId(),
-          peerIds: transport.getPeerIds(),
-        },
-      })
-    } else {
-      console.log('I am a client, not submitting tick')
+    currentState = nextState
+    if (isHost) {
+      sendState(currentState)
     }
 
-    syncToPixi(app, gameGraphics, nextState)
+    syncToPixi(app, pixiReferences, currentState)
   })
 
-  // Register cleanup on abort
   return () => {
-    console.log('Cleaning up game...', transport.getPlayerId())
+    console.log('Cleaning up game...')
     keyTracker.destroy()
     app.stop()
-    // app.destroy()
-    runtime.destroy()
     world.free()
+    room.leave()
   }
 }
 
@@ -376,6 +286,7 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
       return
     }
 
+    console.log('initializing game...', mode, roomId)
     const cleanupPromise = initializeGame(
       canvasRef.current,
       { mode, roomId },
@@ -413,7 +324,7 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
           title={`Connection status: ${connection}`}
         />
         <span>
-          {mode === 'host' ? '🎮 Hosting' : '👥 Joined'} - Room: {roomId}
+          {mode === 'host' ? '🎮 Hosting' : '👥 Joined'} <code>{roomId}</code>
         </span>
         <span style={{ marginLeft: '20px' }}>Players: {playerIds.length}</span>
       </div>
