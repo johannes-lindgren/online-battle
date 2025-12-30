@@ -10,7 +10,7 @@ type AppState =
     }
   | {
       room: 'game'
-      mode: 'host' | 'join'
+      mode: 'host' | 'client'
       roomId: string
     }
 
@@ -20,7 +20,7 @@ export function App() {
     roomId: 'paddle-battle-room-1',
   })
 
-  const handleStartGame = (mode: 'host' | 'join') => {
+  const handleStartGame = (mode: 'host' | 'client') => {
     setAppState({ room: 'game', mode, roomId: appState.roomId })
   }
 

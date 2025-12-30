@@ -1,7 +1,7 @@
 interface MenuProps {
   roomId: string
   onRoomIdChange: (roomId: string) => void
-  onStartGame: (mode: 'host' | 'join') => void
+  onStartGame: (mode: 'host' | 'client') => void
 }
 
 export function Menu(props: MenuProps) {
@@ -36,7 +36,7 @@ export function Menu(props: MenuProps) {
         Host Game
       </button>
       <button
-        onClick={() => onStartGame('join')}
+        onClick={() => onStartGame('client')}
         style={{ padding: '10px 20px', fontSize: '16px' }}
       >
         Join Game
