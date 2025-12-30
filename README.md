@@ -104,6 +104,7 @@ docker compose up -d
 ```
 
 This exposes:
+
 - STUN/TURN on 3478 (UDP/TCP)
 - TURN relay ports 49152-49252 (UDP)
 
@@ -116,10 +117,14 @@ Add the ICE server config when creating a `RTCPeerConnection`:
 ```ts
 const pc = new RTCPeerConnection({
   iceServers: [
-    { urls: ["stun:" + TURN_PUBLIC_URL] },
-    { urls: ["turn:" + TURN_PUBLIC_URL + ":3478"], username: TURN_USERNAME, credential: TURN_PASSWORD }
-  ]
-});
+    { urls: ['stun:' + TURN_PUBLIC_URL] },
+    {
+      urls: ['turn:' + TURN_PUBLIC_URL + ':3478'],
+      username: TURN_USERNAME,
+      credential: TURN_PASSWORD,
+    },
+  ],
+})
 ```
 
 Where `TURN_PUBLIC_URL` is the host/IP you set for `TURN_PUBLIC_IP`.
@@ -127,6 +132,7 @@ Where `TURN_PUBLIC_URL` is the host/IP you set for `TURN_PUBLIC_IP`.
 For local dev using localhost, Chrome requires secure context for TURN over TCP sometimes; prefer using your LAN IP.
 
 ## Troubleshooting
+
 - If candidates are all `host` and no `srflx`/`relay`, verify ports are open and `TURN_PUBLIC_IP` is reachable from peers.
 - On macOS Docker Desktop, ensure UDP port range is exposed and not blocked by firewall.
 - Check coturn logs in the container:

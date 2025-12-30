@@ -10,10 +10,10 @@ services:
     container_name: coturn
     restart: unless-stopped
     ports:
-      - "3478:3478/udp"    # STUN/TURN UDP
-      - "3478:3478/tcp"    # STUN/TURN TCP
-      - "5349:5349/tcp"    # TURN over TLS (optional)
-      - "49152-49252:49152-49252/udp" # TURN relay ports
+      - '3478:3478/udp' # STUN/TURN UDP
+      - '3478:3478/tcp' # STUN/TURN TCP
+      - '5349:5349/tcp' # TURN over TLS (optional)
+      - '49152-49252:49152-49252/udp' # TURN relay ports
     environment:
       - TURN_REALM=${TURN_REALM}
       - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
@@ -23,7 +23,7 @@ services:
     volumes:
       - ./turnserver.conf:/etc/turnserver.conf:ro
     healthcheck:
-      test: ["CMD", "turnadmin", "-l"]
+      test: ['CMD', 'turnadmin', '-l']
       interval: 10s
       timeout: 5s
       retries: 5
