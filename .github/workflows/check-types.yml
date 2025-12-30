@@ -4,8 +4,8 @@ on:
   pull_request:
 
 jobs:
-  check-types:
-    name: Type check
+  integration-checks:
+    name: Integration checks
     runs-on: ubuntu-latest
 
     steps:
