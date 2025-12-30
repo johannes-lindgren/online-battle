@@ -2,7 +2,7 @@
 
 ### Be Concise
 
-Do not generate more code than asked for. Always focus on the task in the instructions. Do not perform unrelated cleanup, refactoring, or adding other improvements unless explicitly asked to do so.  Also try to be concise.
+Do not generate more code than asked for. Always focus on the task in the instructions. Do not perform unrelated cleanup, refactoring, or adding other improvements unless explicitly asked to do so. Also try to be concise.
 
 ### Comments
 
