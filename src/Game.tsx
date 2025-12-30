@@ -36,7 +36,7 @@ export const createGame = () =>
           state.inputs[context.targetId] = input
         },
       },
-// ashsdhfweh
+
       tick: {
         apply: (
           state,
