@@ -36,7 +36,7 @@ export const createGame = () =>
           state.inputs[context.targetId] = input
         },
       },
-//asdasdaa hej
+
       tick: {
         apply: (
           state,
@@ -80,3 +80,5 @@ export const createGame = () =>
       playerManager.handleLeave(state.players, playerId)
     },
   })
+
+// GAME SUCKING OVER
