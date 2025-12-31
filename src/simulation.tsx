@@ -132,14 +132,14 @@ export const syncFromWorld = (
   }
 
   // Copy all players with updated positions from the physics world
-  Object.keys(currentState.players).forEach((playerId) => {
+  Object.entries(currentState.players).forEach(([playerId, player]) => {
     const handle = worldReferences.playerToBody.get(playerId)
     const rigidBody = handle !== undefined ? world.getRigidBody(handle) : null
 
     if (rigidBody) {
       const position = rigidBody.translation()
       nextState.players[playerId] = {
-        ...currentState.players[playerId],
+        ...player,
         position: { x: position.x, y: position.y },
       }
     } else {
