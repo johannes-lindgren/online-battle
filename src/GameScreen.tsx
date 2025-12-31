@@ -14,6 +14,7 @@ import RAPIER from '@dimforge/rapier2d'
 import {
   applyInput,
   createWorldReferences,
+  staticWorldConfig,
   syncFromWorld,
   syncToWorld,
 } from './simulation.tsx'
@@ -96,7 +97,7 @@ const getOrCreatePlayerGraphics = (
 
   // Create the circle graphic
   const paddleGraphic = new Graphics()
-  paddleGraphic.circle(0, 0, 20) // Draw circle with radius 20
+  paddleGraphic.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
   paddleGraphic.fill(0xaa0000)
 
   // Create the text label with player ID
@@ -137,9 +138,8 @@ const getOrCreateSoldierGraphics = (
 
   // Soldier visual: a small blue square
   const soldierGraphic = new Graphics()
-  soldierGraphic.beginFill(0x3366ff)
-  soldierGraphic.drawRect(-8, -8, 16, 16)
-  soldierGraphic.endFill()
+  soldierGraphic.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
+  soldierGraphic.fill('purple')
 
   // Label with associated player (unit) id
   const text = new Text({
