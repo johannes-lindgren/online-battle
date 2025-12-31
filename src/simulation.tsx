@@ -3,15 +3,28 @@ import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { scale } from './math/Vector2'
 
+export const staticWorldConfig = {
+  soldier: {
+    radius: 10,
+  },
+  player: {
+    radius: 20,
+  },
+}
+
 // Bidirectional mapping between playerIds and rigid body handles
 export type WorldReferences = {
   playerToBody: Map<string, RAPIER.RigidBodyHandle>
   bodyToPlayer: Map<RAPIER.RigidBodyHandle, string>
+  soldierToBody: Map<string, RAPIER.RigidBodyHandle>
+  bodyToSoldier: Map<RAPIER.RigidBodyHandle, string>
 }
 
 export const createWorldReferences = (): WorldReferences => ({
   playerToBody: new Map(),
   bodyToPlayer: new Map(),
+  soldierToBody: new Map(),
+  bodyToSoldier: new Map(),
 })
 
 export const addReference = (
@@ -23,7 +36,6 @@ export const addReference = (
   worldReferences.bodyToPlayer.set(handle, playerId)
 }
 
-// Remove a reference from worldReferences
 export const removeReference = (
   worldReferences: WorldReferences,
   playerId: string
@@ -33,6 +45,26 @@ export const removeReference = (
     worldReferences.bodyToPlayer.delete(handle)
   }
   worldReferences.playerToBody.delete(playerId)
+}
+
+export const addSoldierReference = (
+  worldReferences: WorldReferences,
+  soldierId: string,
+  handle: RAPIER.RigidBodyHandle
+) => {
+  worldReferences.soldierToBody.set(soldierId, handle)
+  worldReferences.bodyToSoldier.set(handle, soldierId)
+}
+
+export const removeSoldierReference = (
+  worldReferences: WorldReferences,
+  soldierId: string
+) => {
+  const handle = worldReferences.soldierToBody.get(soldierId)
+  if (handle !== undefined) {
+    worldReferences.bodyToSoldier.delete(handle)
+  }
+  worldReferences.soldierToBody.delete(soldierId)
 }
 
 // Get or create rigid body for a player
@@ -58,13 +90,46 @@ export const getOrCreateRigidBody = (
   const handle = rigidBody.handle
 
   // Add a ball collider with radius 20 and friction
-  const colliderDesc = RAPIER.ColliderDesc.ball(20)
+  const colliderDesc = RAPIER.ColliderDesc.ball(staticWorldConfig.player.radius)
     .setFriction(0.5) // Add friction for contact with surfaces
     .setRestitution(0.3) // Add some bounciness (0 = no bounce, 1 = perfect bounce)
 
   world.createCollider(colliderDesc, rigidBody)
   // Store bidirectional mapping
   addReference(worldReferences, playerId, handle)
+
+  return rigidBody
+}
+
+export const getOrCreateSoldierRigidBody = (
+  world: RAPIER.World,
+  worldReferences: WorldReferences,
+  soldierId: string
+): RAPIER.RigidBody => {
+  const existingHandle = worldReferences.soldierToBody.get(soldierId)
+  if (existingHandle !== undefined) {
+    const rigidBody = world.getRigidBody(existingHandle)
+    if (rigidBody) {
+      return rigidBody
+    }
+  }
+
+  const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(0, 0)
+    .setLinearDamping(1.0)
+
+  const rigidBody = world.createRigidBody(rigidBodyDesc)
+  const handle = rigidBody.handle
+
+  // Smaller collider for soldiers (square approximation with a small ball)
+  const colliderDesc = RAPIER.ColliderDesc.ball(
+    staticWorldConfig.soldier.radius
+  )
+    .setFriction(0.4)
+    .setMass(2)
+  world.createCollider(colliderDesc, rigidBody)
+
+  addSoldierReference(worldReferences, soldierId, handle)
 
   return rigidBody
 }
@@ -106,6 +171,18 @@ export const syncToWorld = (
     }
   })
 
+  Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
+    const rigidBody = getOrCreateSoldierRigidBody(
+      world,
+      worldReferences,
+      soldierId
+    )
+
+    rigidBody.setTranslation(soldier.position, false)
+    rigidBody.resetForces(true)
+    // Soldiers currently don't receive external forces here
+  })
+
   // Third loop: Remove rigid bodies for disconnected players
   worldReferences.playerToBody.forEach((handle, playerId) => {
     if (playerId in state.players) {
@@ -118,6 +195,18 @@ export const syncToWorld = (
     removeReference(worldReferences, playerId)
     console.log(`Removed rigid body for player ${playerId}`)
   })
+
+  worldReferences.soldierToBody.forEach((handle, soldierId) => {
+    if (soldierId in state.soldiers) {
+      return
+    }
+    const rigidBody = world.getRigidBody(handle)
+    if (rigidBody) {
+      world.removeRigidBody(rigidBody)
+    }
+    removeSoldierReference(worldReferences, soldierId)
+    console.log(`Removed rigid body for soldier ${soldierId}`)
+  })
 }
 
 export const syncFromWorld = (
@@ -129,17 +218,18 @@ export const syncFromWorld = (
   const nextState: GameState = {
     ...currentState,
     players: {},
+    soldiers: {},
   }
 
   // Copy all players with updated positions from the physics world
-  Object.keys(currentState.players).forEach((playerId) => {
+  Object.entries(currentState.players).forEach(([playerId, player]) => {
     const handle = worldReferences.playerToBody.get(playerId)
     const rigidBody = handle !== undefined ? world.getRigidBody(handle) : null
 
     if (rigidBody) {
       const position = rigidBody.translation()
       nextState.players[playerId] = {
-        ...currentState.players[playerId],
+        ...player,
         position: { x: position.x, y: position.y },
       }
     } else {
@@ -147,6 +237,25 @@ export const syncFromWorld = (
       const player = currentState.players[playerId]
       if (player) {
         nextState.players[playerId] = player
+      }
+    }
+  })
+
+  // Copy all soldiers with updated positions from the physics world
+  Object.entries(currentState.soldiers).forEach(([soldierId, soldier]) => {
+    const handle = worldReferences.soldierToBody.get(soldierId)
+    const rigidBody = handle !== undefined ? world.getRigidBody(handle) : null
+
+    if (rigidBody) {
+      const position = rigidBody.translation()
+      nextState.soldiers[soldierId] = {
+        ...soldier,
+        position: { x: position.x, y: position.y },
+      }
+    } else {
+      const s = currentState.soldiers[soldierId]
+      if (s) {
+        nextState.soldiers[soldierId] = s
       }
     }
   })

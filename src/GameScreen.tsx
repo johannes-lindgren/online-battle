@@ -14,6 +14,7 @@ import RAPIER from '@dimforge/rapier2d'
 import {
   applyInput,
   createWorldReferences,
+  staticWorldConfig,
   syncFromWorld,
   syncToWorld,
 } from './simulation.tsx'
@@ -30,11 +31,15 @@ interface GameProps {
 type PixiReferences = {
   playerToBody: Map<string, Container>
   bodyToPlayer: WeakMap<Container, string>
+  soldierToBody: Map<string, Container>
+  bodyToSoldier: WeakMap<Container, string>
 }
 
 const createPixiReferences = (): PixiReferences => ({
   playerToBody: new Map(),
   bodyToPlayer: new WeakMap(),
+  soldierToBody: new Map(),
+  bodyToSoldier: new WeakMap(),
 })
 
 const addPixiReference = (
@@ -57,6 +62,26 @@ const removePixiReference = (
   pixiReferences.playerToBody.delete(playerId)
 }
 
+const addSoldierReference = (
+  pixiReferences: PixiReferences,
+  soldierId: string,
+  container: Container
+) => {
+  pixiReferences.soldierToBody.set(soldierId, container)
+  pixiReferences.bodyToSoldier.set(container, soldierId)
+}
+
+const removeSoldierReference = (
+  pixiReferences: PixiReferences,
+  soldierId: string
+) => {
+  const container = pixiReferences.soldierToBody.get(soldierId)
+  if (container !== undefined) {
+    pixiReferences.bodyToSoldier.delete(container)
+  }
+  pixiReferences.soldierToBody.delete(soldierId)
+}
+
 // Get or create graphics for a player
 const getOrCreatePlayerGraphics = (
   app: Application<Renderer>,
@@ -72,7 +97,7 @@ const getOrCreatePlayerGraphics = (
 
   // Create the circle graphic
   const paddleGraphic = new Graphics()
-  paddleGraphic.circle(0, 0, 20) // Draw circle with radius 20
+  paddleGraphic.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
   paddleGraphic.fill(0xaa0000)
 
   // Create the text label with player ID
@@ -94,6 +119,45 @@ const getOrCreatePlayerGraphics = (
 
   app.stage.addChild(container)
   addPixiReference(pixiReferences, playerId, container)
+  return container
+}
+
+// Create or get graphics for a soldier unit
+const getOrCreateSoldierGraphics = (
+  app: Application<Renderer>,
+  pixiReferences: PixiReferences,
+  soldierId: string,
+  unitId: string
+): Container => {
+  const existing = pixiReferences.soldierToBody.get(soldierId)
+  if (existing) {
+    return existing
+  }
+
+  const container = new Container()
+
+  // Soldier visual: a small blue square
+  const soldierGraphic = new Graphics()
+  soldierGraphic.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
+  soldierGraphic.fill('purple')
+
+  // Label with associated player (unit) id
+  const text = new Text({
+    text: unitId.slice(0, 4),
+    style: {
+      fontSize: 10,
+      fill: 0xffffff,
+      align: 'center',
+    },
+  })
+  text.anchor.set(0.5, 0.5)
+  text.scale.y = -1
+
+  container.addChild(soldierGraphic)
+  container.addChild(text)
+
+  app.stage.addChild(container)
+  addSoldierReference(pixiReferences, soldierId, container)
   return container
 }
 
@@ -120,6 +184,26 @@ const syncToPixi = (
     }
     app.stage.removeChild(container)
     removePixiReference(pixiReferences, playerId)
+  })
+
+  // Add or update soldier graphics (soldiers are stored globally on state)
+  Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
+    const soldierGraphics = getOrCreateSoldierGraphics(
+      app,
+      pixiReferences,
+      soldierId,
+      soldier.unitId
+    )
+    soldierGraphics.position.set(soldier.position.x, soldier.position.y)
+  })
+
+  // Remove graphics for soldiers that are no longer present or whose owner left
+  pixiReferences.soldierToBody.forEach((container, soldierId) => {
+    const soldier = state.soldiers[soldierId]
+    if (!soldier || !(soldier.unitId in state.players)) {
+      app.stage.removeChild(container)
+      removeSoldierReference(pixiReferences, soldierId)
+    }
   })
 }
 
@@ -272,7 +356,7 @@ const initializeGame = async (
     keyTracker.destroy()
     app.stop()
     world.free()
-    room.leave()
+    // room.leave()
   }
 }
 
