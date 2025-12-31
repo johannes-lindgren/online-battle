@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Application, Container, Graphics, type Renderer, Text } from 'pixi.js'
-import { joinRoom } from 'trystero/mqtt'
-import { selfId } from 'trystero'
+import { joinRoom, selfId } from 'trystero/supabase'
 import {
   createInitialState,
   type GameState,
@@ -18,6 +17,12 @@ import {
   syncToWorld,
 } from './simulation.tsx'
 import { normalized, origo } from './math/Vector2.ts'
+
+const supabasePublicAnonKey =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppY21icW9qZ3BieW5ldnZteHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcxMTc5MDEsImV4cCI6MjA4MjY5MzkwMX0.8q48DiKeB9JZalMiykbHSNguPgrLofXE2P6FUlD6gnY'
+const supabaseUrl = 'https://zicmbqojgpbynevvmxxe.supabase.co'
+
+const appId = supabaseUrl
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected'
 
@@ -151,7 +156,8 @@ const initializeGame = async (
   console.log('Joining room:', config.roomId)
   const room = joinRoom(
     {
-      appId: 'online-armies-game',
+      appId: appId,
+      supabaseKey: supabasePublicAnonKey,
     },
     config.roomId
   )
@@ -272,7 +278,7 @@ const initializeGame = async (
     keyTracker.destroy()
     app.stop()
     world.free()
-    room.leave()
+    // room.leave()
   }
 }
 
