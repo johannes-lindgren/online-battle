@@ -3,6 +3,10 @@ import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { scale } from './math/Vector2'
 
+/*
+ * Properties that never change after initialization.
+ * These properties do not need to be synchronized between server and clients.
+ */
 export const staticWorldConfig = {
   soldier: {
     radius: 10,
@@ -14,58 +18,14 @@ export const staticWorldConfig = {
 
 // Bidirectional mapping between playerIds and rigid body handles
 export type WorldReferences = {
-  playerToBody: Map<string, RAPIER.RigidBodyHandle>
-  bodyToPlayer: Map<RAPIER.RigidBodyHandle, string>
-  soldierToBody: Map<string, RAPIER.RigidBodyHandle>
-  bodyToSoldier: Map<RAPIER.RigidBodyHandle, string>
+  player: Map<string, RAPIER.RigidBodyHandle>
+  soldier: Map<string, RAPIER.RigidBodyHandle>
 }
 
 export const createWorldReferences = (): WorldReferences => ({
-  playerToBody: new Map(),
-  bodyToPlayer: new Map(),
-  soldierToBody: new Map(),
-  bodyToSoldier: new Map(),
+  player: new Map(),
+  soldier: new Map(),
 })
-
-export const addReference = (
-  worldReferences: WorldReferences,
-  playerId: string,
-  handle: RAPIER.RigidBodyHandle
-) => {
-  worldReferences.playerToBody.set(playerId, handle)
-  worldReferences.bodyToPlayer.set(handle, playerId)
-}
-
-export const removeReference = (
-  worldReferences: WorldReferences,
-  playerId: string
-) => {
-  const handle = worldReferences.playerToBody.get(playerId)
-  if (handle !== undefined) {
-    worldReferences.bodyToPlayer.delete(handle)
-  }
-  worldReferences.playerToBody.delete(playerId)
-}
-
-export const addSoldierReference = (
-  worldReferences: WorldReferences,
-  soldierId: string,
-  handle: RAPIER.RigidBodyHandle
-) => {
-  worldReferences.soldierToBody.set(soldierId, handle)
-  worldReferences.bodyToSoldier.set(handle, soldierId)
-}
-
-export const removeSoldierReference = (
-  worldReferences: WorldReferences,
-  soldierId: string
-) => {
-  const handle = worldReferences.soldierToBody.get(soldierId)
-  if (handle !== undefined) {
-    worldReferences.bodyToSoldier.delete(handle)
-  }
-  worldReferences.soldierToBody.delete(soldierId)
-}
 
 // Get or create rigid body for a player
 export const getOrCreateRigidBody = (
@@ -73,7 +33,7 @@ export const getOrCreateRigidBody = (
   worldReferences: WorldReferences,
   playerId: string
 ): RAPIER.RigidBody => {
-  const existingHandle = worldReferences.playerToBody.get(playerId)
+  const existingHandle = worldReferences.player.get(playerId)
   if (existingHandle !== undefined) {
     const rigidBody = world.getRigidBody(existingHandle)
     if (rigidBody) {
@@ -96,7 +56,7 @@ export const getOrCreateRigidBody = (
 
   world.createCollider(colliderDesc, rigidBody)
   // Store bidirectional mapping
-  addReference(worldReferences, playerId, handle)
+  worldReferences.player.set(playerId, handle)
 
   return rigidBody
 }
@@ -106,7 +66,7 @@ export const getOrCreateSoldierRigidBody = (
   worldReferences: WorldReferences,
   soldierId: string
 ): RAPIER.RigidBody => {
-  const existingHandle = worldReferences.soldierToBody.get(soldierId)
+  const existingHandle = worldReferences.soldier.get(soldierId)
   if (existingHandle !== undefined) {
     const rigidBody = world.getRigidBody(existingHandle)
     if (rigidBody) {
@@ -129,7 +89,7 @@ export const getOrCreateSoldierRigidBody = (
     .setMass(2)
   world.createCollider(colliderDesc, rigidBody)
 
-  addSoldierReference(worldReferences, soldierId, handle)
+  worldReferences.soldier.set(soldierId, handle)
 
   return rigidBody
 }
@@ -184,7 +144,7 @@ export const syncToWorld = (
   })
 
   // Third loop: Remove rigid bodies for disconnected players
-  worldReferences.playerToBody.forEach((handle, playerId) => {
+  worldReferences.player.forEach((handle, playerId) => {
     if (playerId in state.players) {
       return
     }
@@ -192,11 +152,11 @@ export const syncToWorld = (
     if (rigidBody) {
       world.removeRigidBody(rigidBody)
     }
-    removeReference(worldReferences, playerId)
+    worldReferences.player.delete(playerId)
     console.log(`Removed rigid body for player ${playerId}`)
   })
 
-  worldReferences.soldierToBody.forEach((handle, soldierId) => {
+  worldReferences.soldier.forEach((handle, soldierId) => {
     if (soldierId in state.soldiers) {
       return
     }
@@ -204,7 +164,7 @@ export const syncToWorld = (
     if (rigidBody) {
       world.removeRigidBody(rigidBody)
     }
-    removeSoldierReference(worldReferences, soldierId)
+    worldReferences.soldier.delete(soldierId)
     console.log(`Removed rigid body for soldier ${soldierId}`)
   })
 }
@@ -223,7 +183,7 @@ export const syncFromWorld = (
 
   // Copy all players with updated positions from the physics world
   Object.entries(currentState.players).forEach(([playerId, player]) => {
-    const handle = worldReferences.playerToBody.get(playerId)
+    const handle = worldReferences.player.get(playerId)
     const rigidBody = handle !== undefined ? world.getRigidBody(handle) : null
 
     if (rigidBody) {
@@ -243,7 +203,7 @@ export const syncFromWorld = (
 
   // Copy all soldiers with updated positions from the physics world
   Object.entries(currentState.soldiers).forEach(([soldierId, soldier]) => {
-    const handle = worldReferences.soldierToBody.get(soldierId)
+    const handle = worldReferences.soldier.get(soldierId)
     const rigidBody = handle !== undefined ? world.getRigidBody(handle) : null
 
     if (rigidBody) {

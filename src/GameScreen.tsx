@@ -17,7 +17,7 @@ import {
   staticWorldConfig,
   syncFromWorld,
   syncToWorld,
-} from './simulation.tsx'
+} from './simulation'
 import { normalized, origo } from './math/Vector2.ts'
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected'
@@ -29,57 +29,15 @@ interface GameProps {
 }
 
 type PixiReferences = {
-  playerToBody: Map<string, Container>
-  bodyToPlayer: WeakMap<Container, string>
-  soldierToBody: Map<string, Container>
-  bodyToSoldier: WeakMap<Container, string>
+  player: Map<string, Container>
+  soldier: Map<string, Container>
 }
 
-const createPixiReferences = (): PixiReferences => ({
-  playerToBody: new Map(),
-  bodyToPlayer: new WeakMap(),
-  soldierToBody: new Map(),
-  bodyToSoldier: new WeakMap(),
-})
-
-const addPixiReference = (
-  pixiReferences: PixiReferences,
-  playerId: string,
-  container: Container
-) => {
-  pixiReferences.playerToBody.set(playerId, container)
-  pixiReferences.bodyToPlayer.set(container, playerId)
-}
-
-const removePixiReference = (
-  pixiReferences: PixiReferences,
-  playerId: string
-) => {
-  const container = pixiReferences.playerToBody.get(playerId)
-  if (container !== undefined) {
-    pixiReferences.bodyToPlayer.delete(container)
+const createGamePixiReferences = (): PixiReferences => {
+  return {
+    player: new Map(),
+    soldier: new Map(),
   }
-  pixiReferences.playerToBody.delete(playerId)
-}
-
-const addSoldierReference = (
-  pixiReferences: PixiReferences,
-  soldierId: string,
-  container: Container
-) => {
-  pixiReferences.soldierToBody.set(soldierId, container)
-  pixiReferences.bodyToSoldier.set(container, soldierId)
-}
-
-const removeSoldierReference = (
-  pixiReferences: PixiReferences,
-  soldierId: string
-) => {
-  const container = pixiReferences.soldierToBody.get(soldierId)
-  if (container !== undefined) {
-    pixiReferences.bodyToSoldier.delete(container)
-  }
-  pixiReferences.soldierToBody.delete(soldierId)
 }
 
 // Get or create graphics for a player
@@ -88,7 +46,7 @@ const getOrCreatePlayerGraphics = (
   pixiReferences: PixiReferences,
   playerId: string
 ): Container => {
-  const existing = pixiReferences.playerToBody.get(playerId)
+  const existing = pixiReferences.player.get(playerId)
   if (existing) {
     return existing
   }
@@ -118,7 +76,7 @@ const getOrCreatePlayerGraphics = (
   container.addChild(text)
 
   app.stage.addChild(container)
-  addPixiReference(pixiReferences, playerId, container)
+  pixiReferences.player.set(playerId, container)
   return container
 }
 
@@ -129,7 +87,7 @@ const getOrCreateSoldierGraphics = (
   soldierId: string,
   unitId: string
 ): Container => {
-  const existing = pixiReferences.soldierToBody.get(soldierId)
+  const existing = pixiReferences.soldier.get(soldierId)
   if (existing) {
     return existing
   }
@@ -157,7 +115,7 @@ const getOrCreateSoldierGraphics = (
   container.addChild(text)
 
   app.stage.addChild(container)
-  addSoldierReference(pixiReferences, soldierId, container)
+  pixiReferences.soldier.set(soldierId, container)
   return container
 }
 
@@ -178,12 +136,12 @@ const syncToPixi = (
   })
 
   // Remove graphics for players that have left
-  pixiReferences.playerToBody.forEach((container, playerId) => {
+  pixiReferences.player.forEach((container, playerId) => {
     if (playerId in state.players) {
       return
     }
     app.stage.removeChild(container)
-    removePixiReference(pixiReferences, playerId)
+    pixiReferences.player.delete(playerId)
   })
 
   // Add or update soldier graphics (soldiers are stored globally on state)
@@ -198,11 +156,11 @@ const syncToPixi = (
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left
-  pixiReferences.soldierToBody.forEach((container, soldierId) => {
+  pixiReferences.soldier.forEach((container, soldierId) => {
     const soldier = state.soldiers[soldierId]
     if (!soldier || !(soldier.unitId in state.players)) {
       app.stage.removeChild(container)
-      removeSoldierReference(pixiReferences, soldierId)
+      pixiReferences.soldier.delete(soldierId)
     }
   })
 }
@@ -303,7 +261,7 @@ const initializeGame = async (
   const gravity = { x: 0.0, y: 0 }
   const world = new RAPIER.World(gravity)
 
-  const pixiReferences: PixiReferences = createPixiReferences()
+  const pixiReferences = createGamePixiReferences()
 
   const worldReferences = createWorldReferences()
 
