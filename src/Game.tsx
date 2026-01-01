@@ -22,13 +22,10 @@ export type GameState = {
 }
 
 export function createInitialState(playerIds: string[]): GameState {
-  const players: Record<string, Player> = {}
-  playerIds.forEach((id, index) => {
-    players[id] = {
-      position: vector(index * 50, 300),
-    }
-  })
-  return { players, inputs: {}, soldiers: {} }
+  const initialState = { players: {}, inputs: {}, soldiers: {} }
+  playerIds.forEach((id) => handlePlayerJoin(initialState, id))
+
+  return initialState
 }
 
 export function handlePlayerJoin(state: GameState, playerId: string): void {
