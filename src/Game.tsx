@@ -1,5 +1,6 @@
 import { type Vector2, vector } from './math/Vector2.ts'
 import { v4 as uuid } from 'uuid'
+import { pseudoRandomColor } from './randomColor.ts'
 
 export type Soldier = {
   position: Vector2
@@ -9,6 +10,7 @@ export type Soldier = {
 
 export type Player = {
   position: Vector2
+  color: string
 }
 
 export type PlayerInput = {
@@ -40,6 +42,7 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
   const index = Object.keys(state.players).length
   state.players[playerId] = {
     position: vector(index * 50, 300),
+    color: pseudoRandomColor(playerId),
   }
 }
 
