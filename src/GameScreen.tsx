@@ -16,8 +16,6 @@ import {
   createWorldReferences,
   simulate,
   staticWorldConfig,
-  syncFromWorld,
-  syncToWorld,
 } from './simulation'
 import { normalized, origo } from './math/Vector2.ts'
 

@@ -1,7 +1,7 @@
 // Add a reference to worldReferences
 import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput } from './Game.tsx'
-import { normalized, scale, sub } from './math/Vector2'
+import { normalized, origo, scale, sub } from './math/Vector2'
 
 /*
  * Properties that never change after initialization.
@@ -156,9 +156,8 @@ export const syncToWorld = (
     // AI: Solider follow their unit
     const player = state.players[soldier.unitId]
     if (player) {
-      const directionToPlayer = normalized(
-        sub(player.position, soldier.position)
-      )
+      const directionToPlayer =
+        normalized(sub(player.position, soldier.position)) ?? origo
       const force = staticWorldConfig.soldier.walkForce
 
       rigidBody.addForce(scale(directionToPlayer, force), true)
