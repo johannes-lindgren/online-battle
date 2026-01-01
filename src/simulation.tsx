@@ -27,20 +27,11 @@ export const createWorldReferences = (): WorldReferences => ({
   soldier: new Map(),
 })
 
-// Get or create rigid body for a player
-export const getOrCreateRigidBody = (
+const createPlayer = (
   world: RAPIER.World,
   worldReferences: WorldReferences,
   playerId: string
 ): RAPIER.RigidBody => {
-  const existingHandle = worldReferences.player.get(playerId)
-  if (existingHandle !== undefined) {
-    const rigidBody = world.getRigidBody(existingHandle)
-    if (rigidBody) {
-      return rigidBody
-    }
-  }
-
   // Create new rigid body for this player as a ball
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
@@ -61,12 +52,12 @@ export const getOrCreateRigidBody = (
   return rigidBody
 }
 
-export const getOrCreateSoldierRigidBody = (
+const getOrCreatePlayer = (
   world: RAPIER.World,
   worldReferences: WorldReferences,
-  soldierId: string
+  playerId: string
 ): RAPIER.RigidBody => {
-  const existingHandle = worldReferences.soldier.get(soldierId)
+  const existingHandle = worldReferences.player.get(playerId)
   if (existingHandle !== undefined) {
     const rigidBody = world.getRigidBody(existingHandle)
     if (rigidBody) {
@@ -74,6 +65,14 @@ export const getOrCreateSoldierRigidBody = (
     }
   }
 
+  return createPlayer(world, worldReferences, playerId)
+}
+
+const createSolider = (
+  world: RAPIER.World,
+  worldReferences: WorldReferences,
+  soldierId: string
+): RAPIER.RigidBody => {
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
     .setLinearDamping(1.0)
@@ -92,6 +91,22 @@ export const getOrCreateSoldierRigidBody = (
   worldReferences.soldier.set(soldierId, handle)
 
   return rigidBody
+}
+
+const getOrCreateSoldier = (
+  world: RAPIER.World,
+  worldReferences: WorldReferences,
+  soldierId: string
+): RAPIER.RigidBody => {
+  const existingHandle = worldReferences.soldier.get(soldierId)
+  if (existingHandle !== undefined) {
+    const rigidBody = world.getRigidBody(existingHandle)
+    if (rigidBody) {
+      return rigidBody
+    }
+  }
+
+  return createSolider(world, worldReferences, soldierId)
 }
 
 export const applyInput = (
@@ -115,7 +130,7 @@ export const syncToWorld = (
 ) => {
   // First loop: Create rigid bodies for new players
   Object.entries(state.players).forEach(([playerId, player]) => {
-    const rigidBody = getOrCreateRigidBody(world, worldReferences, playerId)
+    const rigidBody = getOrCreatePlayer(world, worldReferences, playerId)
 
     // Update rigid body position
     rigidBody.setTranslation(player.position, false)
@@ -132,11 +147,7 @@ export const syncToWorld = (
   })
 
   Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
-    const rigidBody = getOrCreateSoldierRigidBody(
-      world,
-      worldReferences,
-      soldierId
-    )
+    const rigidBody = getOrCreateSoldier(world, worldReferences, soldierId)
 
     rigidBody.setTranslation(soldier.position, false)
     rigidBody.resetForces(true)
