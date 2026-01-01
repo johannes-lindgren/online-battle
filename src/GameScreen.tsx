@@ -32,12 +32,14 @@ type PixiUnitRef = { container: Container; circle: Graphics }
 type PixiReferences = {
   player: Map<string, PixiUnitRef>
   soldier: Map<string, PixiUnitRef>
+  units: Map<string, PixiUnitRef>
 }
 
 const createGamePixiReferences = (): PixiReferences => {
   return {
     player: new Map(),
     soldier: new Map(),
+    units: new Map(),
   }
 }
 
@@ -79,13 +81,46 @@ const createPlayer = (
 const getOrCreatePlayer = (
   appContainer: Container,
   pixiReferences: PixiReferences,
-  playerId: string
+  id: string
 ) => {
-  const existing = pixiReferences.player.get(playerId)
+  const existing = pixiReferences.player.get(id)
   if (existing) {
     return existing
   }
-  return createPlayer(appContainer, pixiReferences, playerId)
+  return createPlayer(appContainer, pixiReferences, id)
+}
+
+const getOrCreateUnit = (
+  appContainer: Container,
+  pixiReferences: PixiReferences,
+  id: string
+) => {
+  const existing = pixiReferences.units.get(id)
+  if (existing) {
+    return existing
+  }
+  return createUnit(appContainer, pixiReferences, id)
+}
+
+const createUnit = (
+  appContainer: Container,
+  pixiReferences: PixiReferences,
+  id: string
+): PixiUnitRef => {
+  const container = new Container()
+
+  // Unit visual: a small green square
+  const circle = new Graphics()
+  circle.circle(0, 0, staticWorldConfig.unit.flagSize)
+  circle.fill('green')
+
+  // Add both to the container
+  container.addChild(circle)
+  appContainer.addChild(container)
+
+  const result = { container: container, circle: circle }
+  pixiReferences.units.set(id, result)
+  return result
 }
 
 const createSoldier = (
@@ -98,7 +133,7 @@ const createSoldier = (
 
   // Soldier visual: a small blue square
   const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
+  circle.circle(0, 0, staticWorldConfig.soldier.radius)
   circle.fill('purple')
 
   // Label with associated player (unit) id
@@ -151,13 +186,20 @@ const syncToPixi = (
     appContainer.position.set(targetX, targetY)
   }
   // Add or update player graphics
-  Object.entries(state.players).forEach(([playerId, player]) => {
-    const ref = getOrCreatePlayer(appContainer, pixiReferences, playerId)
+  Object.entries(state.players).forEach(([id, player]) => {
+    const ref = getOrCreatePlayer(appContainer, pixiReferences, id)
 
     ref.container.position.set(player.position.x, player.position.y)
     ref.circle.clear()
     ref.circle.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
     ref.circle.fill(player.color)
+  })
+
+  // Add or update unit graphics
+  Object.entries(state.units).forEach(([id, unit]) => {
+    const ref = getOrCreateUnit(appContainer, pixiReferences, id)
+
+    ref.container.position.set(unit.position.x, unit.position.y)
   })
 
   // Remove graphics for players that have left
@@ -170,11 +212,11 @@ const syncToPixi = (
   })
 
   // Add or update soldier graphics (soldiers are stored globally on state)
-  Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
+  Object.entries(state.soldiers).forEach(([id, soldier]) => {
     const ref = getOrCreateSoldier(
       appContainer,
       pixiReferences,
-      soldierId,
+      id,
       soldier.unitId
     )
     const player = state.players[soldier.unitId]
@@ -307,6 +349,12 @@ const initializeGame = async (
 
   const keyTracker = keyDownTracker()
 
+  // Listen to klick events on the canvas to focus for keyboard input
+  const handleClick = (e: MouseEvent) => {
+    // const
+  }
+  const clickHandle = app.canvas.addEventListener('mousedown', handleClick)
+
   const getOwnInput = (): PlayerInput => {
     const isUp = keyTracker.isKeyDown('KeyW') || keyTracker.isKeyDown('ArrowUp')
     const isDown =
@@ -353,6 +401,7 @@ const initializeGame = async (
 
   return () => {
     console.log('Cleaning up game...')
+    removeEventListener('mousedown', clickHandle)
     keyTracker.destroy()
     app.stop()
     world.free()

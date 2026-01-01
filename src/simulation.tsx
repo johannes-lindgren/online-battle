@@ -16,6 +16,9 @@ export const staticWorldConfig = {
     radius: 20,
     walkForce: 1e6,
   },
+  unit: {
+    flagSize: 15,
+  },
 }
 
 // Bidirectional mapping between playerIds and rigid body handles
