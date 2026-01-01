@@ -1,7 +1,7 @@
 // Add a reference to worldReferences
 import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput } from './Game.tsx'
-import { scale } from './math/Vector2'
+import { normalized, scale, sub } from './math/Vector2'
 
 /*
  * Properties that never change after initialization.
@@ -10,9 +10,11 @@ import { scale } from './math/Vector2'
 export const staticWorldConfig = {
   soldier: {
     radius: 10,
+    walkForce: 1e2,
   },
   player: {
     radius: 20,
+    walkForce: 1e6,
   },
 }
 
@@ -35,7 +37,7 @@ const createPlayer = (
   // Create new rigid body for this player as a ball
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
-    .setLinearDamping(5.0) // Add damping to slow down over time (5.0 = strong air resistance)
+    .setLinearDamping(3.0) // Add damping to slow down over time (5.0 = strong air resistance)
 
   const rigidBody = world.createRigidBody(rigidBodyDesc)
   const handle = rigidBody.handle
@@ -141,7 +143,7 @@ export const syncToWorld = (
     // Apply new force based on current input
     const input = state.inputs[playerId]
     if (input) {
-      const forceMultiplier = 1000000.0
+      const forceMultiplier = staticWorldConfig.player.walkForce
       rigidBody.addForce(scale(input.movingDirection, forceMultiplier), true)
     }
   })
@@ -151,7 +153,16 @@ export const syncToWorld = (
 
     rigidBody.setTranslation(soldier.position, false)
     rigidBody.resetForces(true)
-    // Soldiers currently don't receive external forces here
+    // AI: Solider follow their unit
+    const player = state.players[soldier.unitId]
+    if (player) {
+      const directionToPlayer = normalized(
+        sub(player.position, soldier.position)
+      )
+      const force = staticWorldConfig.soldier.walkForce
+
+      rigidBody.addForce(scale(directionToPlayer, force), true)
+    }
   })
 
   // Third loop: Remove rigid bodies for disconnected players
@@ -232,4 +243,14 @@ export const syncFromWorld = (
   })
 
   return nextState
+}
+
+export const simulate = (
+  currentState: GameState,
+  world: RAPIER.World,
+  worldReferences: WorldReferences
+) => {
+  syncToWorld(world, currentState, worldReferences)
+  world.step()
+  return syncFromWorld(world, worldReferences, currentState)
 }

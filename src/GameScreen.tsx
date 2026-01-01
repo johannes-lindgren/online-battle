@@ -14,6 +14,7 @@ import RAPIER from '@dimforge/rapier2d'
 import {
   applyInput,
   createWorldReferences,
+  simulate,
   staticWorldConfig,
   syncFromWorld,
   syncToWorld,
@@ -319,11 +320,7 @@ const initializeGame = async (
     sendInput(ownInput)
     keyTracker.drainEventQueue()
 
-    syncToWorld(world, currentState, worldReferences)
-    world.step()
-    const nextState = syncFromWorld(world, worldReferences, currentState)
-
-    currentState = nextState
+    currentState = simulate(currentState, world, worldReferences)
     if (isHost) {
       sendState(currentState)
     }

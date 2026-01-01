@@ -34,16 +34,26 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
   if (state.players[playerId]) {
     return
   }
-  const soldier = { position: vector(100, 100), unitId: playerId }
 
-  const soldierId = uuid()
-  state.soldiers[soldierId] = soldier
+  // Spawn 20 soliders
+  Array(20)
+    .fill(0)
+    .forEach(() => {
+      spawnSolider(state, playerId)
+    })
 
   const index = Object.keys(state.players).length
   state.players[playerId] = {
     position: vector(index * 50, 300),
     color: pseudoRandomColor(playerId),
   }
+}
+
+const spawnSolider = (state: GameState, unitId: string): void => {
+  const soldier = { position: vector(100, 100), unitId: unitId }
+
+  const soldierId = uuid()
+  state.soldiers[soldierId] = soldier
 }
 
 export function handlePlayerLeave(state: GameState, playerId: string): void {
