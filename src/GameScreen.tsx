@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Application, Container, Graphics, type Renderer, Text } from 'pixi.js'
+import { Application, Container, Graphics, Text } from 'pixi.js'
 import { joinRoom } from 'trystero/mqtt'
 import { selfId } from 'trystero'
 import {
@@ -42,7 +42,7 @@ const createGamePixiReferences = (): PixiReferences => {
 }
 
 const createPlayer = (
-  app: Application<Renderer>,
+  appContainer: Container,
   pixiReferences: PixiReferences,
   id: string
 ): PixiUnitRef => {
@@ -68,7 +68,7 @@ const createPlayer = (
   // Add both to the container
   container.addChild(circle)
   container.addChild(text)
-  app.stage.addChild(container)
+  appContainer.addChild(container)
 
   const result = { container: container, circle: circle }
   pixiReferences.player.set(id, result)
@@ -77,7 +77,7 @@ const createPlayer = (
 
 // Get or create graphics for a player
 const getOrCreatePlayer = (
-  app: Application<Renderer>,
+  appContainer: Container,
   pixiReferences: PixiReferences,
   playerId: string
 ) => {
@@ -85,11 +85,11 @@ const getOrCreatePlayer = (
   if (existing) {
     return existing
   }
-  return createPlayer(app, pixiReferences, playerId)
+  return createPlayer(appContainer, pixiReferences, playerId)
 }
 
 const createSoldier = (
-  app: Application<Renderer>,
+  appContainer: Container,
   pixiReferences: PixiReferences,
   id: string,
   unitId: string
@@ -115,7 +115,7 @@ const createSoldier = (
 
   container.addChild(circle)
   container.addChild(text)
-  app.stage.addChild(container)
+  appContainer.addChild(container)
 
   const result = { container: container, circle: circle }
   pixiReferences.player.set(id, result)
@@ -123,7 +123,7 @@ const createSoldier = (
 }
 
 const getOrCreateSoldier = (
-  app: Application<Renderer>,
+  appContainer: Container,
   pixiReferences: PixiReferences,
   soldierId: string,
   unitId: string
@@ -132,18 +132,27 @@ const getOrCreateSoldier = (
   if (existing) {
     return existing
   }
-  return createSoldier(app, pixiReferences, soldierId, unitId)
+  return createSoldier(appContainer, pixiReferences, soldierId, unitId)
 }
 
 // Render function - updates Pixi graphics from current state
 const syncToPixi = (
-  app: Application<Renderer>,
+  appContainer: Container,
   pixiReferences: PixiReferences,
-  state: GameState
+  state: GameState,
+  selfId: string,
+  screenDimensions: { width: number; height: number }
 ) => {
+  // Update camera position to follow own player
+  const ownPlayer = state.players[selfId]
+  if (ownPlayer) {
+    const targetX = screenDimensions.width / 2 - ownPlayer.position.x
+    const targetY = screenDimensions.height / 2 - ownPlayer.position.y
+    appContainer.position.set(targetX, targetY)
+  }
   // Add or update player graphics
   Object.entries(state.players).forEach(([playerId, player]) => {
-    const ref = getOrCreatePlayer(app, pixiReferences, playerId)
+    const ref = getOrCreatePlayer(appContainer, pixiReferences, playerId)
 
     ref.container.position.set(player.position.x, player.position.y)
     ref.circle.clear()
@@ -156,14 +165,14 @@ const syncToPixi = (
     if (playerId in state.players) {
       return
     }
-    app.stage.removeChild(playerRef.container)
+    appContainer.removeChild(playerRef.container)
     pixiReferences.player.delete(playerId)
   })
 
   // Add or update soldier graphics (soldiers are stored globally on state)
   Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
     const ref = getOrCreateSoldier(
-      app,
+      appContainer,
       pixiReferences,
       soldierId,
       soldier.unitId
@@ -180,7 +189,7 @@ const syncToPixi = (
   pixiReferences.soldier.forEach((ref, soldierId) => {
     const soldier = state.soldiers[soldierId]
     if (!soldier || !(soldier.unitId in state.players)) {
-      app.stage.removeChild(ref.container)
+      appContainer.removeChild(ref.container)
       pixiReferences.soldier.delete(soldierId)
     }
   })
@@ -200,17 +209,27 @@ const initializeGame = async (
 
   await app.init({
     canvas: canvas,
-    width: 800,
+    width: 1200,
     height: 600,
     backgroundColor: 0x1a1a1a,
   })
 
   // Invert Y-axis to match physics coordinate system (Y+ = up)
-  app.stage.scale.y = -1
-  app.stage.position.y = app.canvas.height
+
+  const rootContainer = new Container()
+  const screenDimensions = {
+    width: app.canvas.width,
+    height: app.canvas.height,
+  }
+  rootContainer.scale.y = -1
+  rootContainer.position.y = screenDimensions.height
+
+  app.stage.addChild(rootContainer)
+
+  const worldContainer = new Container()
+  rootContainer.addChild(worldContainer)
 
   console.log('joining as:', config.mode)
-
   console.log('Joining room:', config.roomId)
   const room = joinRoom(
     {
@@ -323,7 +342,13 @@ const initializeGame = async (
       sendState(currentState)
     }
 
-    syncToPixi(app, pixiReferences, currentState)
+    syncToPixi(
+      worldContainer,
+      pixiReferences,
+      currentState,
+      selfId,
+      screenDimensions
+    )
   })
 
   return () => {
