@@ -40,16 +40,11 @@ const createGamePixiReferences = (): PixiReferences => {
   }
 }
 
-// Get or create graphics for a player
-const getOrCreatePlayerGraphics = (
+const createPlayer = (
   app: Application<Renderer>,
   pixiReferences: PixiReferences,
   playerId: string
 ): Container => {
-  const existing = pixiReferences.player.get(playerId)
-  if (existing) {
-    return existing
-  }
   // Create a container to hold both the circle and text
   const container = new Container()
 
@@ -80,18 +75,25 @@ const getOrCreatePlayerGraphics = (
   return container
 }
 
-// Create or get graphics for a soldier unit
-const getOrCreateSoldierGraphics = (
+// Get or create graphics for a player
+const getOrCreatePlayer = (
+  app: Application<Renderer>,
+  pixiReferences: PixiReferences,
+  playerId: string
+): Container => {
+  const existing = pixiReferences.player.get(playerId)
+  if (existing) {
+    return existing
+  }
+  return createPlayer(app, pixiReferences, playerId)
+}
+
+const createSoldier = (
   app: Application<Renderer>,
   pixiReferences: PixiReferences,
   soldierId: string,
   unitId: string
 ): Container => {
-  const existing = pixiReferences.soldier.get(soldierId)
-  if (existing) {
-    return existing
-  }
-
   const container = new Container()
 
   // Soldier visual: a small blue square
@@ -119,6 +121,19 @@ const getOrCreateSoldierGraphics = (
   return container
 }
 
+const getOrCreateSoldier = (
+  app: Application<Renderer>,
+  pixiReferences: PixiReferences,
+  soldierId: string,
+  unitId: string
+): Container => {
+  const existing = pixiReferences.soldier.get(soldierId)
+  if (existing) {
+    return existing
+  }
+  return createSoldier(app, pixiReferences, soldierId, unitId)
+}
+
 // Render function - updates Pixi graphics from current state
 const syncToPixi = (
   app: Application<Renderer>,
@@ -127,11 +142,7 @@ const syncToPixi = (
 ) => {
   // Add or update player graphics
   Object.entries(state.players).forEach(([playerId, player]) => {
-    const playerGraphics = getOrCreatePlayerGraphics(
-      app,
-      pixiReferences,
-      playerId
-    )
+    const playerGraphics = getOrCreatePlayer(app, pixiReferences, playerId)
     playerGraphics.position.set(player.position.x, player.position.y)
   })
 
@@ -146,7 +157,7 @@ const syncToPixi = (
 
   // Add or update soldier graphics (soldiers are stored globally on state)
   Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
-    const soldierGraphics = getOrCreateSoldierGraphics(
+    const soldierGraphics = getOrCreateSoldier(
       app,
       pixiReferences,
       soldierId,
