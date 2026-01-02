@@ -8,7 +8,6 @@ import {
   handlePlayerJoin,
   handlePlayerLeave,
   type PlayerInput,
-  type PlayerInstruction,
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
@@ -113,7 +112,9 @@ const createUnit = (
 const createSoldier = (
   appContainer: Container,
   pixiReferences: PixiReferences,
-  id: string
+  id: string,
+  unitId: string,
+  onClick: (unitId: string) => void
 ): PixiUnitRef => {
   const container = new Container()
 
@@ -125,6 +126,11 @@ const createSoldier = (
   container.addChild(circle)
   appContainer.addChild(container)
 
+  container.interactive = true
+  container.on('pointerdown', () => {
+    onClick(unitId)
+  })
+
   const result = { container: container, circle: circle }
   pixiReferences.player.set(id, result)
   return result
@@ -133,13 +139,15 @@ const createSoldier = (
 const getOrCreateSoldier = (
   appContainer: Container,
   pixiReferences: PixiReferences,
-  soldierId: string
+  soldierId: string,
+  unitId: string,
+  onClick: (unitId: string) => void
 ) => {
   const existing = pixiReferences.soldier.get(soldierId)
   if (existing) {
     return existing
   }
-  return createSoldier(appContainer, pixiReferences, soldierId)
+  return createSoldier(appContainer, pixiReferences, soldierId, unitId, onClick)
 }
 
 // Render function - updates Pixi graphics from current state
@@ -148,7 +156,8 @@ const syncToPixi = (
   pixiReferences: PixiReferences,
   state: GameState,
   selfId: string,
-  screenDimensions: { width: number; height: number }
+  screenDimensions: { width: number; height: number },
+  onClick: (unitId: string) => void
 ) => {
   // Update camera position to follow own player
   const ownPlayer = state.players[selfId]
@@ -185,7 +194,13 @@ const syncToPixi = (
 
   // Add or update soldier graphics (soldiers are stored globally on state)
   Object.entries(state.soldiers).forEach(([id, soldier]) => {
-    const ref = getOrCreateSoldier(appContainer, pixiReferences, id)
+    const ref = getOrCreateSoldier(
+      appContainer,
+      pixiReferences,
+      id,
+      soldier.unitId,
+      onClick
+    )
     const unit = state.units[soldier.unitId]
     const player = unit ? state.players[unit.playerId] : undefined
 
@@ -316,7 +331,11 @@ const initializeGame = async (
   const worldReferences = createWorldReferences()
 
   const keyTracker = keyDownTracker()
-  let instructionBuffer: PlayerInstruction[] = []
+  let playerInput: PlayerInput = {
+    movingDirection: origo,
+    instructions: [],
+    selectedUnitId: undefined,
+  }
 
   app.stage.interactive = true
   app.stage.hitArea = app.screen
@@ -324,18 +343,13 @@ const initializeGame = async (
   app.stage.on('pointerdown', (e) => {
     const worldPos = worldContainer.toLocal(e.global)
 
-    console.log(worldPos)
-    const unit = Object.entries(currentState.units).find(
-      (it) => it[1].playerId === selfId
-    )
-    if (!unit) {
+    if (playerInput.selectedUnitId === undefined) {
       return
     }
-    const [unitId] = unit
 
-    instructionBuffer.push({
+    playerInput.instructions.push({
       tag: 'moveUnit',
-      unitId: unitId,
+      unitId: playerInput.selectedUnitId,
       position: { x: worldPos.x, y: worldPos.y },
     })
   })
@@ -360,17 +374,26 @@ const initializeGame = async (
           x: leftSpeed + rightSpeed,
           y: upSpeed + downSpeed,
         }) ?? origo,
-      instructions: instructionBuffer,
+      instructions: playerInput.instructions,
     }
   }
 
+  // const handleUpdateInput = (
+  //   update: (nextInput: PlayerInput) => PlayerInput
+  // ) => {
+  //   playerInput = update(playerInput)
+  // }
+  const handleClick = (unitId: string) => {
+    playerInput.selectedUnitId = unitId
+    console.log(playerInput.selectedUnitId)
+  }
   app.ticker.add(() => {
     // Process own input.
     const ownInput = getOwnInput()
     applyInput(currentState, selfId, ownInput)
     sendInput(ownInput)
     keyTracker.drainEventQueue()
-    instructionBuffer = []
+    playerInput.instructions = []
 
     currentState = simulate(currentState, world, worldReferences)
     if (isHost) {
@@ -382,7 +405,8 @@ const initializeGame = async (
       pixiReferences,
       currentState,
       selfId,
-      screenDimensions
+      screenDimensions,
+      handleClick
     )
   })
 
