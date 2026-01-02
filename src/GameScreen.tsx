@@ -9,6 +9,7 @@ import {
   handlePlayerLeave,
   type PlayerInput,
   type PlayerInstruction,
+  type Soldier,
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
@@ -37,6 +38,7 @@ type PixiReferences = {
   player: Map<string, PixiUnitRef>
   soldier: Map<string, PixiUnitRef>
   units: Map<string, PixiUnitRef>
+  textures: Map<string, Text>
 }
 
 const createGamePixiReferences = (): PixiReferences => {
@@ -44,6 +46,7 @@ const createGamePixiReferences = (): PixiReferences => {
     player: new Map(),
     soldier: new Map(),
     units: new Map(),
+    textures: new Map(),
   }
 }
 
@@ -80,7 +83,7 @@ const getOrCreatePlayer = (
   if (existing) {
     return existing
   }
-  return createPlayer(appContainer, pixiReferences, state, playerId)
+  return createPlayer(appContainer, pixiReferences, state, id)
 }
 
 const getOrCreateUnit = (
@@ -121,10 +124,12 @@ const createSoldier = (
   pixiReferences: PixiReferences,
   state: GameState,
   id: string,
-  unitId: string
+  solider: Soldier
 ): PixiUnitRef => {
   const container = new Container()
-  const player = state.players[unitId]
+
+  const unit = state.units[solider.unitId]
+  const player = unit ? state.players[unit.playerId] : undefined
 
   // Create the circle graphic
   const circle = new Graphics()
@@ -143,14 +148,14 @@ const getOrCreateSoldier = (
   appContainer: Container,
   pixiReferences: PixiReferences,
   state: GameState,
-  soldierId: string,
-  unitId: string
+  id: string,
+  soldier: Soldier
 ) => {
-  const existing = pixiReferences.soldier.get(soldierId)
+  const existing = pixiReferences.soldier.get(id)
   if (existing) {
     return existing
   }
-  return createSoldier(appContainer, pixiReferences, state, soldierId, unitId)
+  return createSoldier(appContainer, pixiReferences, state, id, soldier)
 }
 
 // Render function - updates Pixi graphics from current state
@@ -199,10 +204,8 @@ const syncToPixi = (
       pixiReferences,
       state,
       id,
-      soldier.unitId
+      soldier
     )
-    const unit = state.units[soldier.unitId]
-    const player = unit ? state.players[unit.playerId] : undefined
 
     ref.container.position.set(soldier.position.x, soldier.position.y)
   })
