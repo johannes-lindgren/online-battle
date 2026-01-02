@@ -127,7 +127,6 @@ export const applyInput = (
     if (instruction.tag === 'moveUnit') {
       const unit = state.units[instruction.unitId]
 
-      console.log(unit)
       if (!unit) {
         return
       }

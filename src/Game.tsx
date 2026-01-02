@@ -27,6 +27,7 @@ export type Player = {
 export type PlayerInput = {
   movingDirection: Vector2
   instructions: PlayerInstruction[]
+  selectedUnitId?: string
 }
 
 export type GameState = {
@@ -48,20 +49,32 @@ export function createInitialState(playerIds: string[]): GameState {
   return initialState
 }
 
-export function handlePlayerJoin(state: GameState, playerId: string): void {
-  if (state.players[playerId]) {
-    return
-  }
-  // Add unit
+const createUnitCompositions = (
+  state: GameState,
+  playerId: string,
+  soliderCount: number
+) => {
   const unit: Unit = { position: vector(500, 100), playerId: playerId }
   const unitId = uuid()
   state.units[unitId] = unit
 
   // Spawn 20 soliders
-  Array(8)
+  Array(soliderCount)
     .fill(0)
     .forEach(() => {
       spawnSolider(state, unitId)
+    })
+}
+
+export function handlePlayerJoin(state: GameState, playerId: string): void {
+  if (state.players[playerId]) {
+    return
+  }
+  // Add unit
+  Array(3)
+    .fill(0)
+    .forEach(() => {
+      createUnitCompositions(state, playerId, 5)
     })
 
   const index = Object.keys(state.players).length
