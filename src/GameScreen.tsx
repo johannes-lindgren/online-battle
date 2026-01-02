@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Application, Container, Graphics, Text } from 'pixi.js'
+import { Application, Container, Graphics } from 'pixi.js'
 import { joinRoom } from 'trystero/mqtt'
 import { selfId } from 'trystero'
 import {
@@ -54,22 +54,8 @@ const createPlayer = (
   // Create the circle graphic
   const circle = new Graphics()
 
-  // Create the text label with player ID
-  const text = new Text({
-    text: id.slice(0, 4),
-    style: {
-      fontSize: 12,
-      fill: 0xffffff,
-      align: 'center',
-    },
-  })
-  // Center the text and flip it vertically (since Y-axis is inverted)
-  text.anchor.set(0.5, 0.5)
-  text.scale.y = -1 // Flip text vertically to counteract the inverted Y-axis
-
   // Add both to the container
   container.addChild(circle)
-  container.addChild(text)
   appContainer.addChild(container)
 
   const result = { container: container, circle: circle }
@@ -137,20 +123,7 @@ const createSoldier = (
   circle.circle(0, 0, staticWorldConfig.soldier.radius)
   circle.fill('purple')
 
-  // Label with associated player (unit) id
-  const text = new Text({
-    text: unitId.slice(0, 4),
-    style: {
-      fontSize: 10,
-      fill: 0xffffff,
-      align: 'center',
-    },
-  })
-  text.anchor.set(0.5, 0.5)
-  text.scale.y = -1
-
   container.addChild(circle)
-  container.addChild(text)
   appContainer.addChild(container)
 
   container.interactive = true
