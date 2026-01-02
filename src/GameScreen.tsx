@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Application, Container, Graphics, Text } from 'pixi.js'
+import { Application, Container, Graphics } from 'pixi.js'
 import { joinRoom } from 'trystero/mqtt'
 import { selfId } from 'trystero'
 import {
@@ -27,7 +27,10 @@ interface GameProps {
   onBackToMenu: () => void
 }
 
-type PixiUnitRef = { container: Container; circle: Graphics }
+type PixiUnitRef = {
+  container: Container
+  circle: Graphics
+}
 
 type PixiReferences = {
   player: Map<string, PixiUnitRef>
@@ -44,30 +47,18 @@ const createGamePixiReferences = (): PixiReferences => {
 const createPlayer = (
   appContainer: Container,
   pixiReferences: PixiReferences,
+  state: GameState,
   id: string
 ): PixiUnitRef => {
-  // Create a container to hold both the circle and text
   const container = new Container()
+  const player = state.players[id]
 
   // Create the circle graphic
   const circle = new Graphics()
+  circle.circle(0, 0, staticWorldConfig.player.radius)
+  circle.fill(player?.color ?? 'gray')
 
-  // Create the text label with player ID
-  const text = new Text({
-    text: id.slice(0, 4),
-    style: {
-      fontSize: 12,
-      fill: 0xffffff,
-      align: 'center',
-    },
-  })
-  // Center the text and flip it vertically (since Y-axis is inverted)
-  text.anchor.set(0.5, 0.5)
-  text.scale.y = -1 // Flip text vertically to counteract the inverted Y-axis
-
-  // Add both to the container
   container.addChild(circle)
-  container.addChild(text)
   appContainer.addChild(container)
 
   const result = { container: container, circle: circle }
@@ -79,52 +70,43 @@ const createPlayer = (
 const getOrCreatePlayer = (
   appContainer: Container,
   pixiReferences: PixiReferences,
+  state: GameState,
   playerId: string
 ) => {
   const existing = pixiReferences.player.get(playerId)
   if (existing) {
     return existing
   }
-  return createPlayer(appContainer, pixiReferences, playerId)
+  return createPlayer(appContainer, pixiReferences, state, playerId)
 }
 
 const createSoldier = (
   appContainer: Container,
   pixiReferences: PixiReferences,
+  state: GameState,
   id: string,
   unitId: string
 ): PixiUnitRef => {
   const container = new Container()
+  const player = state.players[unitId]
 
-  // Soldier visual: a small blue square
+  // Create the circle graphic
   const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
-  circle.fill('purple')
-
-  // Label with associated player (unit) id
-  const text = new Text({
-    text: unitId.slice(0, 4),
-    style: {
-      fontSize: 10,
-      fill: 0xffffff,
-      align: 'center',
-    },
-  })
-  text.anchor.set(0.5, 0.5)
-  text.scale.y = -1
+  circle.circle(0, 0, staticWorldConfig.soldier.radius)
+  circle.fill(player?.color ?? 'gray')
 
   container.addChild(circle)
-  container.addChild(text)
   appContainer.addChild(container)
 
   const result = { container: container, circle: circle }
-  pixiReferences.player.set(id, result)
+  pixiReferences.soldier.set(id, result)
   return result
 }
 
 const getOrCreateSoldier = (
   appContainer: Container,
   pixiReferences: PixiReferences,
+  state: GameState,
   soldierId: string,
   unitId: string
 ) => {
@@ -132,7 +114,7 @@ const getOrCreateSoldier = (
   if (existing) {
     return existing
   }
-  return createSoldier(appContainer, pixiReferences, soldierId, unitId)
+  return createSoldier(appContainer, pixiReferences, state, soldierId, unitId)
 }
 
 // Render function - updates Pixi graphics from current state
@@ -152,12 +134,9 @@ const syncToPixi = (
   }
   // Add or update player graphics
   Object.entries(state.players).forEach(([playerId, player]) => {
-    const ref = getOrCreatePlayer(appContainer, pixiReferences, playerId)
+    const ref = getOrCreatePlayer(appContainer, pixiReferences, state, playerId)
 
     ref.container.position.set(player.position.x, player.position.y)
-    ref.circle.clear()
-    ref.circle.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
-    ref.circle.fill(player.color)
   })
 
   // Remove graphics for players that have left
@@ -166,6 +145,7 @@ const syncToPixi = (
       return
     }
     appContainer.removeChild(playerRef.container)
+    playerRef.container.destroy({ children: true })
     pixiReferences.player.delete(playerId)
   })
 
@@ -174,15 +154,11 @@ const syncToPixi = (
     const ref = getOrCreateSoldier(
       appContainer,
       pixiReferences,
+      state,
       soldierId,
       soldier.unitId
     )
-    const player = state.players[soldier.unitId]
-
     ref.container.position.set(soldier.position.x, soldier.position.y)
-    ref.circle.clear()
-    ref.circle.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
-    ref.circle.fill(player?.color ?? 'gray')
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left
@@ -190,6 +166,7 @@ const syncToPixi = (
     const soldier = state.soldiers[soldierId]
     if (!soldier || !(soldier.unitId in state.players)) {
       appContainer.removeChild(ref.container)
+      ref.container.destroy({ children: true })
       pixiReferences.soldier.delete(soldierId)
     }
   })
@@ -354,9 +331,26 @@ const initializeGame = async (
   return () => {
     console.log('Cleaning up game...')
     keyTracker.destroy()
+
+    // Destroy all player containers
+    pixiReferences.player.forEach((ref) => {
+      ref.container.destroy({ children: true })
+    })
+    pixiReferences.player.clear()
+
+    // Destroy all soldier containers
+    pixiReferences.soldier.forEach((ref) => {
+      ref.container.destroy({ children: true })
+    })
+    pixiReferences.soldier.clear()
+
+    // TODO uncomment, but it will cause the app to crash in React dev mode
+    // Destroy the Pixi application
+    // app.destroy(true, { children: true })
     app.stop()
+
     world.free()
-    // room.leave()
+    room.leave()
   }
 }
 
