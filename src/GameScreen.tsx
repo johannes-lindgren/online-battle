@@ -8,6 +8,7 @@ import {
   handlePlayerJoin,
   handlePlayerLeave,
   type PlayerInput,
+  type PlayerInstruction,
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
@@ -35,12 +36,14 @@ type PixiUnitRef = {
 type PixiReferences = {
   player: Map<string, PixiUnitRef>
   soldier: Map<string, PixiUnitRef>
+  units: Map<string, PixiUnitRef>
 }
 
 const createGamePixiReferences = (): PixiReferences => {
   return {
     player: new Map(),
     soldier: new Map(),
+    units: new Map(),
   }
 }
 
@@ -71,13 +74,46 @@ const getOrCreatePlayer = (
   appContainer: Container,
   pixiReferences: PixiReferences,
   state: GameState,
-  playerId: string
+  id: string
 ) => {
-  const existing = pixiReferences.player.get(playerId)
+  const existing = pixiReferences.units.get(id)
   if (existing) {
     return existing
   }
   return createPlayer(appContainer, pixiReferences, state, playerId)
+}
+
+const getOrCreateUnit = (
+  appContainer: Container,
+  pixiReferences: PixiReferences,
+  id: string
+) => {
+  const existing = pixiReferences.units.get(id)
+  if (existing) {
+    return existing
+  }
+  return createUnit(appContainer, pixiReferences, id)
+}
+
+const createUnit = (
+  appContainer: Container,
+  pixiReferences: PixiReferences,
+  id: string
+): PixiUnitRef => {
+  const container = new Container()
+
+  // Unit visual: a small green square
+  const circle = new Graphics()
+  circle.circle(0, 0, staticWorldConfig.unit.flagSize)
+  circle.fill('green')
+
+  // Add both to the container
+  container.addChild(circle)
+  appContainer.addChild(container)
+
+  const result = { container: container, circle: circle }
+  pixiReferences.units.set(id, result)
+  return result
 }
 
 const createSoldier = (
@@ -133,10 +169,17 @@ const syncToPixi = (
     appContainer.position.set(targetX, targetY)
   }
   // Add or update player graphics
-  Object.entries(state.players).forEach(([playerId, player]) => {
-    const ref = getOrCreatePlayer(appContainer, pixiReferences, state, playerId)
+  Object.entries(state.players).forEach(([id, player]) => {
+    const ref = getOrCreatePlayer(appContainer, pixiReferences, state, id)
 
     ref.container.position.set(player.position.x, player.position.y)
+  })
+
+  // Add or update unit graphics
+  Object.entries(state.units).forEach(([id, unit]) => {
+    const ref = getOrCreateUnit(appContainer, pixiReferences, id)
+
+    ref.container.position.set(unit.position.x, unit.position.y)
   })
 
   // Remove graphics for players that have left
@@ -150,14 +193,17 @@ const syncToPixi = (
   })
 
   // Add or update soldier graphics (soldiers are stored globally on state)
-  Object.entries(state.soldiers).forEach(([soldierId, soldier]) => {
+  Object.entries(state.soldiers).forEach(([id, soldier]) => {
     const ref = getOrCreateSoldier(
       appContainer,
       pixiReferences,
       state,
-      soldierId,
+      id,
       soldier.unitId
     )
+    const unit = state.units[soldier.unitId]
+    const player = unit ? state.players[unit.playerId] : undefined
+
     ref.container.position.set(soldier.position.x, soldier.position.y)
   })
 
@@ -283,6 +329,29 @@ const initializeGame = async (
   const worldReferences = createWorldReferences()
 
   const keyTracker = keyDownTracker()
+  let instructionBuffer: PlayerInstruction[] = []
+
+  app.stage.interactive = true
+  app.stage.hitArea = app.screen
+  app.stage.eventMode = 'static'
+  app.stage.on('pointerdown', (e) => {
+    const worldPos = worldContainer.toLocal(e.global)
+
+    console.log(worldPos)
+    const unit = Object.entries(currentState.units).find(
+      (it) => it[1].playerId === selfId
+    )
+    if (!unit) {
+      return
+    }
+    const [unitId] = unit
+
+    instructionBuffer.push({
+      tag: 'moveUnit',
+      unitId: unitId,
+      position: { x: worldPos.x, y: worldPos.y },
+    })
+  })
 
   const getOwnInput = (): PlayerInput => {
     const isUp = keyTracker.isKeyDown('KeyW') || keyTracker.isKeyDown('ArrowUp')
@@ -304,6 +373,7 @@ const initializeGame = async (
           x: leftSpeed + rightSpeed,
           y: upSpeed + downSpeed,
         }) ?? origo,
+      instructions: instructionBuffer,
     }
   }
 
@@ -313,6 +383,7 @@ const initializeGame = async (
     applyInput(currentState, selfId, ownInput)
     sendInput(ownInput)
     keyTracker.drainEventQueue()
+    instructionBuffer = []
 
     currentState = simulate(currentState, world, worldReferences)
     if (isHost) {
