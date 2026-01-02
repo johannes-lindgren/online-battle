@@ -119,7 +119,21 @@ export const applyInput = (
   playerId: string,
   input: PlayerInput
 ) => {
+  // Store the latest input for the player
   state.inputs[playerId] = input
+
+  // Move units
+  input.instructions.forEach((instruction) => {
+    if (instruction.tag === 'moveUnit') {
+      const unit = state.units[instruction.unitId]
+
+      console.log(unit)
+      if (!unit) {
+        return
+      }
+      unit.position = instruction.position
+    }
+  })
 }
 
 /**
@@ -157,13 +171,13 @@ export const syncToWorld = (
     rigidBody.setTranslation(soldier.position, false)
     rigidBody.resetForces(true)
     // AI: Solider follow their unit
-    const player = state.players[soldier.unitId]
-    if (player) {
-      const directionToPlayer =
-        normalized(sub(player.position, soldier.position)) ?? origo
+    const unit = state.units[soldier.unitId]
+    if (unit) {
+      const directionToTarget =
+        normalized(sub(unit.position, soldier.position)) ?? origo
       const force = staticWorldConfig.soldier.walkForce
 
-      rigidBody.addForce(scale(directionToPlayer, force), true)
+      rigidBody.addForce(scale(directionToTarget, force), true)
     }
   })
 

@@ -2,6 +2,12 @@ import { type Vector2, vector } from './math/Vector2.ts'
 import { v4 as uuid } from 'uuid'
 import { pseudoRandomColor } from './randomColor.ts'
 
+export type PlayerInstruction = {
+  tag: 'moveUnit'
+  unitId: string
+  position: Vector2
+}
+
 export type Unit = {
   position: Vector2
   playerId: string
@@ -20,6 +26,7 @@ export type Player = {
 
 export type PlayerInput = {
   movingDirection: Vector2
+  instructions: PlayerInstruction[]
 }
 
 export type GameState = {
@@ -46,15 +53,15 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
     return
   }
   // Add unit
-  const unit: Unit = { position: vector(150, 100), playerId: playerId }
+  const unit: Unit = { position: vector(500, 100), playerId: playerId }
   const unitId = uuid()
   state.units[unitId] = unit
 
   // Spawn 20 soliders
-  Array(20)
+  Array(8)
     .fill(0)
     .forEach(() => {
-      spawnSolider(state, playerId)
+      spawnSolider(state, unitId)
     })
 
   const index = Object.keys(state.players).length

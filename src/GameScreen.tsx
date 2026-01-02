@@ -8,6 +8,7 @@ import {
   handlePlayerJoin,
   handlePlayerLeave,
   type PlayerInput,
+  type PlayerInstruction,
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
@@ -219,7 +220,8 @@ const syncToPixi = (
       id,
       soldier.unitId
     )
-    const player = state.players[soldier.unitId]
+    const unit = state.units[soldier.unitId]
+    const player = unit ? state.players[unit.playerId] : undefined
 
     ref.container.position.set(soldier.position.x, soldier.position.y)
     ref.circle.clear()
@@ -348,12 +350,29 @@ const initializeGame = async (
   const worldReferences = createWorldReferences()
 
   const keyTracker = keyDownTracker()
+  let instructionBuffer: PlayerInstruction[] = []
 
-  // Listen to klick events on the canvas to focus for keyboard input
-  const handleClick = (e: MouseEvent) => {
-    // const
-  }
-  const clickHandle = app.canvas.addEventListener('mousedown', handleClick)
+  app.stage.interactive = true
+  app.stage.hitArea = app.screen
+  app.stage.eventMode = 'static'
+  app.stage.on('pointerdown', (e) => {
+    const worldPos = worldContainer.toLocal(e.global)
+
+    console.log(worldPos)
+    const unit = Object.entries(currentState.units).find(
+      (it) => it[1].playerId === selfId
+    )
+    if (!unit) {
+      return
+    }
+    const [unitId] = unit
+
+    instructionBuffer.push({
+      tag: 'moveUnit',
+      unitId: unitId,
+      position: { x: worldPos.x, y: worldPos.y },
+    })
+  })
 
   const getOwnInput = (): PlayerInput => {
     const isUp = keyTracker.isKeyDown('KeyW') || keyTracker.isKeyDown('ArrowUp')
@@ -375,6 +394,7 @@ const initializeGame = async (
           x: leftSpeed + rightSpeed,
           y: upSpeed + downSpeed,
         }) ?? origo,
+      instructions: instructionBuffer,
     }
   }
 
@@ -384,6 +404,7 @@ const initializeGame = async (
     applyInput(currentState, selfId, ownInput)
     sendInput(ownInput)
     keyTracker.drainEventQueue()
+    instructionBuffer = []
 
     currentState = simulate(currentState, world, worldReferences)
     if (isHost) {
@@ -401,7 +422,6 @@ const initializeGame = async (
 
   return () => {
     console.log('Cleaning up game...')
-    removeEventListener('mousedown', clickHandle)
     keyTracker.destroy()
     app.stop()
     world.free()
