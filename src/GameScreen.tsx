@@ -8,7 +8,6 @@ import {
   handlePlayerJoin,
   handlePlayerLeave,
   type PlayerInput,
-  type PlayerInstruction,
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
@@ -155,7 +154,7 @@ const createSoldier = (
   appContainer.addChild(container)
 
   container.interactive = true
-  container.on('pointerdown', (e) => {
+  container.on('pointerdown', () => {
     onClick(unitId)
   })
 
