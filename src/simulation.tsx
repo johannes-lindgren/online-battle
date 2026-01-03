@@ -1,7 +1,14 @@
 // Add a reference to worldReferences
 import RAPIER from '@dimforge/rapier2d'
-import type { GameState, PlayerInput } from './Game.tsx'
-import { normalized, origo, scale, sub } from './math/Vector2'
+import type { GameState, PlayerInput, Soldier } from './Game.tsx'
+import {
+  add,
+  lengthSquared,
+  normalized,
+  origo,
+  scale,
+  sub,
+} from './math/Vector2'
 
 const natureConst = {
   g: 9.82,
@@ -17,7 +24,7 @@ export const staticWorldConfig = {
     mass: 70,
     linearDamping: 0.5,
     friction: 0.2,
-    restitution: 0.1,
+    restitution: 0.0,
     // The force is proportional to the mass of the player
     walkForcePerKg: 1.3 * natureConst.g,
     runForcePerKg: 2.5 * natureConst.g,
@@ -28,7 +35,7 @@ export const staticWorldConfig = {
   unit: {
     flagSize: 2,
   },
-} as const
+}
 
 // Bidirectional mapping between playerIds and rigid body handles
 export type WorldReferences = {
@@ -182,15 +189,8 @@ export const syncToWorld = (
 
     rigidBody.setTranslation(soldier.position, false)
     rigidBody.resetForces(true)
-    // AI: Solider follow their unit
-    const unit = state.units[soldier.unitId]
-    if (unit) {
-      const directionToTarget =
-        normalized(sub(unit.position, soldier.position)) ?? origo
-      const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
 
-      rigidBody.addForce(scale(directionToTarget, force), true)
-    }
+    updateSoldier(state, soldierId, soldier, rigidBody, world)
   })
 
   // Third loop: Remove rigid bodies for disconnected players
@@ -217,6 +217,72 @@ export const syncToWorld = (
     worldReferences.soldier.delete(soldierId)
     console.log(`Removed rigid body for soldier ${soldierId}`)
   })
+}
+
+const avoidanceDist = staticWorldConfig.soldier.radius * 1
+const avoidanceShape = new RAPIER.Ball(
+  staticWorldConfig.soldier.radius * 2 + avoidanceDist
+)
+
+/*
+ * Soldier AI
+ */
+const updateSoldier = (
+  state: GameState,
+  _soldierId: string,
+  soldier: Soldier,
+  rigidBody: RAPIER.RigidBody,
+  world: RAPIER.World
+) => {
+  const unit = state.units[soldier.unitId]
+  if (!unit) {
+    return
+  }
+
+  let closestDistanceSquared = Infinity
+  let avoidanceDirection = origo
+
+  world.intersectionsWithShape(
+    soldier.position,
+    0,
+    avoidanceShape,
+    (collider) => {
+      const otherBody = collider.parent()
+      if (otherBody && otherBody.handle !== rigidBody.handle) {
+        const otherPos = otherBody.translation()
+        const diff = sub(soldier.position, otherPos)
+        const distanceSquared = lengthSquared(diff)
+
+        if (distanceSquared < closestDistanceSquared) {
+          closestDistanceSquared = distanceSquared
+          avoidanceDirection = normalized(diff) ?? origo
+        }
+      }
+      return true // Continue checking other colliders
+    }
+  )
+  const closestDistance =
+    Math.sqrt(closestDistanceSquared) - staticWorldConfig.soldier.radius * 2
+
+  // Combine target seeking with avoidance
+  const directionToTarget =
+    normalized(sub(unit.position, soldier.position)) ?? origo
+  const avoidanceWeight = Math.max(
+    // The close the soldier is, the more avoidance matters: from no concern until it takes full priority
+    1 - closestDistance / avoidanceDist,
+    // The soldier is not close enough to another soldier to care about avoidance
+    0
+  )
+  const finalDirection =
+    normalized(
+      add(
+        scale(directionToTarget, 1 - avoidanceWeight),
+        scale(avoidanceDirection, avoidanceWeight)
+      )
+    ) ?? directionToTarget
+
+  const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
+  rigidBody.addForce(scale(finalDirection, force), true)
 }
 
 export const syncFromWorld = (
