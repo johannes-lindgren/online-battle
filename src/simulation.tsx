@@ -3,11 +3,14 @@ import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput, Soldier } from './Game.tsx'
 import {
   add,
+  cross,
+  fromAngle,
   lengthSquared,
   normalized,
   origo,
   scale,
   sub,
+  type Vector2,
 } from './math/Vector2'
 
 const natureConst = {
@@ -23,11 +26,13 @@ export const staticWorldConfig = {
     radius: 5,
     mass: 70,
     linearDamping: 0.5,
+    angularDamping: 5,
     friction: 0.2,
     restitution: 0.0,
     // The force is proportional to the mass of the player
     walkForcePerKg: 1.3 * natureConst.g,
     runForcePerKg: 2.5 * natureConst.g,
+    torquePerKg: 0.1,
   },
   player: {
     radius: 5,
@@ -57,6 +62,7 @@ const createPlayer = (
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
     .setLinearDamping(staticWorldConfig.soldier.linearDamping) // Add damping to slow down over time (5.0 = strong air resistance)
+    .setAngularDamping(staticWorldConfig.soldier.angularDamping)
 
   const rigidBody = world.createRigidBody(rigidBodyDesc)
   const handle = rigidBody.handle
@@ -98,6 +104,7 @@ const createSolider = (
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
     .setLinearDamping(staticWorldConfig.soldier.linearDamping)
+    .setAngularDamping(staticWorldConfig.soldier.angularDamping)
 
   const rigidBody = world.createRigidBody(rigidBodyDesc)
   const handle = rigidBody.handle
@@ -188,7 +195,9 @@ export const syncToWorld = (
     const rigidBody = getOrCreateSoldier(world, worldReferences, soldierId)
 
     rigidBody.setTranslation(soldier.position, false)
+    rigidBody.setRotation(soldier.angle, false)
     rigidBody.resetForces(true)
+    rigidBody.resetTorques(true)
 
     updateSoldier(state, soldierId, soldier, rigidBody, world)
   })
@@ -223,6 +232,16 @@ const avoidanceDist = staticWorldConfig.soldier.radius * 1
 const avoidanceShape = new RAPIER.Ball(
   staticWorldConfig.soldier.radius * 2 + avoidanceDist
 )
+
+const rotateSoldierTowards = (
+  rigidBody: RAPIER.RigidBody,
+  targetDirection: Vector2,
+  torqueMultiplier: number
+) => {
+  const currentDirection = fromAngle(rigidBody.rotation())
+  const torque = cross(currentDirection, targetDirection) * torqueMultiplier
+  rigidBody.addTorque(torque, true)
+}
 
 /*
  * Soldier AI
@@ -281,8 +300,23 @@ const updateSoldier = (
       )
     ) ?? directionToTarget
 
-  const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
-  rigidBody.addForce(scale(finalDirection, force), true)
+  // TODO adjust the walk speed based on the players direction:
+  //  - units walk slower sideways and backwards
+
+  const forceMagnitude =
+    staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
+  const force = scale(finalDirection, forceMagnitude)
+  rigidBody.addForce(force, true)
+
+  // Rotate soldier to face movement direction
+  const movementDirection = normalized(rigidBody.linvel())
+  if (movementDirection) {
+    rotateSoldierTowards(
+      rigidBody,
+      directionToTarget,
+      staticWorldConfig.soldier.torquePerKg * rigidBody.mass() * 1000
+    )
+  }
 }
 
 export const syncFromWorld = (
@@ -327,6 +361,7 @@ export const syncFromWorld = (
       nextState.soldiers[soldierId] = {
         ...soldier,
         position: { x: position.x, y: position.y },
+        angle: rigidBody.rotation(),
       }
     } else {
       const s = currentState.soldiers[soldierId]

@@ -92,7 +92,6 @@ export const normalize = (v: Vector2): Vector2 => {
   return div(v, len)
 }
 
-// Dot and cross products
 export const dot = (v1: Vector2, v2: Vector2): number =>
   v1.x * v2.x + v1.y * v2.y
 
