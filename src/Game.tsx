@@ -1,6 +1,8 @@
-import { type Vector2, vector } from './math/Vector2.ts'
+import { type Vector2, vector, add } from './math/Vector2.ts'
 import { v4 as uuid } from 'uuid'
 import { pseudoRandomColor } from './randomColor.ts'
+import * as constants from 'node:constants'
+import { staticWorldConfig } from './simulation.tsx'
 
 export type PlayerInstruction = {
   tag: 'moveUnit'
@@ -52,17 +54,21 @@ export function createInitialState(playerIds: string[]): GameState {
 const createUnitCompositions = (
   state: GameState,
   playerId: string,
-  soliderCount: number
+  position: Vector2
 ) => {
-  const unit: Unit = { position: vector(500, 100), playerId: playerId }
+  const soliderCount: number = 20
+  const unit: Unit = { position, playerId: playerId }
   const unitId = uuid()
   state.units[unitId] = unit
 
-  // Spawn 20 soliders
   Array(soliderCount)
     .fill(0)
-    .forEach(() => {
-      spawnSolider(state, unitId)
+    .forEach((_zero, i) => {
+      const soldierPos = add(
+        unit.position,
+        vector((i - soldierCount / 2) * staticWorldConfig.soldier.radius * 2)
+      )
+      spawnSolider(state, unitId, soldierPos)
     })
 }
 
@@ -70,22 +76,41 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
   if (state.players[playerId]) {
     return
   }
-  // Add unit
-  Array(3)
-    .fill(0)
-    .forEach(() => {
-      createUnitCompositions(state, playerId, 15)
-    })
 
-  const index = Object.keys(state.players).length
-  state.players[playerId] = {
-    position: vector(index * 50, 300),
+  // The new player
+  const playerIndex = Object.keys(state.players).length
+  const playerSpawnPos = vector(0, playerIndex * 300)
+  const player = {
+    position: playerSpawnPos,
     color: pseudoRandomColor(playerId),
   }
+
+  createArmy(state, playerId, playerSpawnPos)
+
+  state.players[playerId] = player
 }
 
-const spawnSolider = (state: GameState, unitId: string): void => {
-  const soldier = { position: vector(100, 100), unitId: unitId }
+const createArmy = (state: GameState, playerId: string, position: Vector2) => {
+  const unitCount: number = 3
+  // Add unit
+  const unitDistance = 100
+  Array(unitCount)
+    .fill(0)
+    .forEach((_zero, i) => {
+      const unitPos = add(
+        position,
+        vector((i - unitCount / 2) * unitDistance, 0)
+      )
+      createUnitCompositions(state, playerId, unitPos)
+    })
+}
+
+const spawnSolider = (
+  state: GameState,
+  unitId: string,
+  position: Vector2
+): void => {
+  const soldier = { position, unitId: unitId }
 
   const soldierId = uuid()
   state.soldiers[soldierId] = soldier
@@ -95,5 +120,3 @@ export function handlePlayerLeave(state: GameState, playerId: string): void {
   delete state.players[playerId]
   delete state.inputs[playerId]
 }
-
-// TODO: REMOVE THIS COMMENT (AND JOHANNES)
