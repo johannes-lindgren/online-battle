@@ -52,8 +52,6 @@ const createPlayer = (
 
   // Player visual: a colored square
   const sprite = new Sprite(pixiReferences.textures.soldier)
-  // sprite.width = 1 / 20
-  // sprite.height = 1 / 20
   sprite.anchor.set(0.5)
   sprite.tint = player ? player.color : 'gray'
   console.log('width')
