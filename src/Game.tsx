@@ -15,7 +15,6 @@ export type Unit = {
 
 export type Soldier = {
   position: Vector2
-  // TODO: This is Player id
   unitId: string
 }
 
