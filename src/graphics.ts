@@ -1,6 +1,7 @@
 import { Container, Graphics, type Renderer, Sprite, Texture } from 'pixi.js'
 import type { GameState } from './Game.tsx'
 import { staticWorldConfig } from './simulation.tsx'
+import { fromAngle, scale } from './math/Vector2.ts'
 
 type PixiUnitRef = { container: Container; sprite: Sprite }
 type PixiTextures = {
@@ -22,6 +23,9 @@ export const createGamePixiReferences = async (
     textures: await createTextures(renderer),
   }
 }
+
+const toPixiAngle = (radians: number): number => -radians * (180 / Math.PI)
+
 const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
   // Create white triangle texture that can be tinted
   const triangle = new Graphics()
@@ -30,11 +34,15 @@ const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
     staticWorldConfig.unit.flagSize,
     staticWorldConfig.player.radius
   )
-  triangle.poly([
-    { x: 0, y: -triangleSize },
-    { x: -triangleSize * 0.866, y: triangleSize * 0.5 },
-    { x: triangleSize * 0.866, y: triangleSize * 0.5 },
-  ])
+  triangle.poly(
+    [
+      // Place three vertices on the unit circle,
+      //  forming a triangle with one tip to the right
+      fromAngle((0 * Math.PI * 2) / 3),
+      fromAngle((1 * Math.PI * 2) / 3),
+      fromAngle((2 * Math.PI * 2) / 3),
+    ].map((vert) => scale(vert, triangleSize))
+  )
   triangle.fill(0xffffff) // White color
 
   const soldierTexture = renderer.extract.texture(triangle)
@@ -223,7 +231,7 @@ export const syncToPixi = (
       onClick
     )
     ref.container.position.set(soldier.position.x, soldier.position.y)
-    ref.container.angle = soldier.angle
+    ref.container.angle = toPixiAngle(soldier.angle)
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left

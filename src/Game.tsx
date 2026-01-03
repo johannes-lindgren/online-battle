@@ -108,7 +108,8 @@ const createArmy = (state: GameState, playerId: string, position: Vector2) => {
   const unitCount: number = 10
   // Add unit
   const unitDistance = 150
-  const angle = 0
+  // Face up
+  const angle = Math.PI / 2
 
   zeros(unitCount).forEach((_zero, i) => {
     const unitPos = add(position, vector((i - unitCount / 2) * unitDistance, 0))
