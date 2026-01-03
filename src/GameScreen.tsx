@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Application, Container, Graphics } from 'pixi.js'
+import {
+  Application,
+  Container,
+  Graphics,
+  type Renderer,
+  Texture,
+} from 'pixi.js'
 import { joinRoom } from 'trystero/mqtt'
 import { selfId } from 'trystero'
 import {
@@ -29,30 +35,56 @@ interface GameProps {
 
 type PixiUnitRef = { container: Container; circle: Graphics }
 
+type PixiTextures = {
+  soldier: Texture
+}
+
 type PixiReferences = {
   player: Map<string, PixiUnitRef>
   soldier: Map<string, PixiUnitRef>
   units: Map<string, PixiUnitRef>
+  textures: PixiTextures
 }
 
-const createGamePixiReferences = (): PixiReferences => {
+const createGamePixiReferences = async (
+  renderer: Renderer
+): Promise<PixiReferences> => {
   return {
     player: new Map(),
     soldier: new Map(),
     units: new Map(),
+    textures: await createTextures(renderer),
+  }
+}
+
+const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
+  // Create white soldier texture that can be tinted
+  const soldierGraphics = new Graphics()
+  soldierGraphics.circle(0, 0, staticWorldConfig.soldier.radius)
+  soldierGraphics.fill(0xffffff) // White color
+
+  const soldierTexture = renderer.extract.texture(soldierGraphics)
+
+  return {
+    soldier: soldierTexture,
   }
 }
 
 const createPlayer = (
   appContainer: Container,
+  gameState: GameState,
   pixiReferences: PixiReferences,
   id: string
 ): PixiUnitRef => {
+  const player = gameState.players[id]
+
   // Create a container to hold both the circle and text
   const container = new Container()
 
   // Create the circle graphic
   const circle = new Graphics()
+  circle.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
+  circle.fill(player?.color ?? 'gray')
 
   // Add both to the container
   container.addChild(circle)
@@ -66,6 +98,7 @@ const createPlayer = (
 // Get or create graphics for a player
 const getOrCreatePlayer = (
   appContainer: Container,
+  gameState: GameState,
   pixiReferences: PixiReferences,
   id: string
 ) => {
@@ -73,11 +106,12 @@ const getOrCreatePlayer = (
   if (existing) {
     return existing
   }
-  return createPlayer(appContainer, pixiReferences, id)
+  return createPlayer(appContainer, gameState, pixiReferences, id)
 }
 
 const getOrCreateUnit = (
   appContainer: Container,
+  gameState: GameState,
   pixiReferences: PixiReferences,
   id: string
 ) => {
@@ -85,20 +119,24 @@ const getOrCreateUnit = (
   if (existing) {
     return existing
   }
-  return createUnit(appContainer, pixiReferences, id)
+  return createUnit(appContainer, gameState, pixiReferences, id)
 }
 
 const createUnit = (
   appContainer: Container,
+  gameState: GameState,
   pixiReferences: PixiReferences,
   id: string
 ): PixiUnitRef => {
+  const unit = gameState.units[id]
+  const player = unit ? gameState.players[unit.playerId] : undefined
+
   const container = new Container()
 
   // Unit visual: a small green square
   const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.unit.flagSize)
-  circle.fill('green')
+  circle.circle(0, 0, staticWorldConfig.soldier.radius)
+  circle.fill(player?.color ?? 'gray')
 
   // Add both to the container
   container.addChild(circle)
@@ -111,17 +149,21 @@ const createUnit = (
 
 const createSoldier = (
   appContainer: Container,
+  gameState: GameState,
   pixiReferences: PixiReferences,
   id: string,
   unitId: string,
   onClick: (unitId: string) => void
 ): PixiUnitRef => {
+  const unit = gameState.units[unitId]
+  const player = unit ? gameState.players[unit.playerId] : undefined
+
   const container = new Container()
 
   // Soldier visual: a small blue square
   const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.soldier.radius)
-  circle.fill('purple')
+  circle.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
+  circle.fill(player?.color ?? 'gray')
 
   container.addChild(circle)
   appContainer.addChild(container)
@@ -138,6 +180,7 @@ const createSoldier = (
 
 const getOrCreateSoldier = (
   appContainer: Container,
+  gameState: GameState,
   pixiReferences: PixiReferences,
   soldierId: string,
   unitId: string,
@@ -147,7 +190,14 @@ const getOrCreateSoldier = (
   if (existing) {
     return existing
   }
-  return createSoldier(appContainer, pixiReferences, soldierId, unitId, onClick)
+  return createSoldier(
+    appContainer,
+    gameState,
+    pixiReferences,
+    soldierId,
+    unitId,
+    onClick
+  )
 }
 
 // Render function - updates Pixi graphics from current state
@@ -168,17 +218,14 @@ const syncToPixi = (
   }
   // Add or update player graphics
   Object.entries(state.players).forEach(([id, player]) => {
-    const ref = getOrCreatePlayer(appContainer, pixiReferences, id)
+    const ref = getOrCreatePlayer(appContainer, state, pixiReferences, id)
 
     ref.container.position.set(player.position.x, player.position.y)
-    ref.circle.clear()
-    ref.circle.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
-    ref.circle.fill(player.color)
   })
 
   // Add or update unit graphics
   Object.entries(state.units).forEach(([id, unit]) => {
-    const ref = getOrCreateUnit(appContainer, pixiReferences, id)
+    const ref = getOrCreateUnit(appContainer, state, pixiReferences, id)
 
     ref.container.position.set(unit.position.x, unit.position.y)
   })
@@ -196,18 +243,13 @@ const syncToPixi = (
   Object.entries(state.soldiers).forEach(([id, soldier]) => {
     const ref = getOrCreateSoldier(
       appContainer,
+      state,
       pixiReferences,
       id,
       soldier.unitId,
       onClick
     )
-    const unit = state.units[soldier.unitId]
-    const player = unit ? state.players[unit.playerId] : undefined
-
     ref.container.position.set(soldier.position.x, soldier.position.y)
-    ref.circle.clear()
-    ref.circle.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
-    ref.circle.fill(player?.color ?? 'gray')
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left
@@ -326,12 +368,12 @@ const initializeGame = async (
   const gravity = { x: 0.0, y: 0 }
   const world = new RAPIER.World(gravity)
 
-  const pixiReferences = createGamePixiReferences()
+  const pixiReferences = await createGamePixiReferences(app.renderer)
 
   const worldReferences = createWorldReferences()
 
   const keyTracker = keyDownTracker()
-  let playerInput: PlayerInput = {
+  const playerInput: PlayerInput = {
     movingDirection: origo,
     instructions: [],
     selectedUnitId: undefined,
