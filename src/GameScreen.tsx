@@ -4,6 +4,7 @@ import {
   Container,
   Graphics,
   type Renderer,
+  Sprite,
   Texture,
 } from 'pixi.js'
 import { joinRoom } from 'trystero/mqtt'
@@ -33,7 +34,7 @@ interface GameProps {
   onBackToMenu: () => void
 }
 
-type PixiUnitRef = { container: Container; circle: Graphics }
+type PixiUnitRef = { container: Container; sprite: Sprite }
 
 type PixiTextures = {
   soldier: Texture
@@ -81,16 +82,16 @@ const createPlayer = (
   // Create a container to hold both the circle and text
   const container = new Container()
 
-  // Create the circle graphic
-  const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.player.radius) // Draw circle with radius 20
-  circle.fill(player?.color ?? 'gray')
+  // Player visual: a colored square
+  const sprite = new Sprite(pixiReferences.textures.soldier)
+  sprite.anchor.set(0.5)
+  sprite.tint = player ? player.color : 'gray'
 
   // Add both to the container
-  container.addChild(circle)
+  container.addChild(sprite)
   appContainer.addChild(container)
 
-  const result = { container: container, circle: circle }
+  const result = { container: container, sprite: sprite }
   pixiReferences.player.set(id, result)
   return result
 }
@@ -133,16 +134,15 @@ const createUnit = (
 
   const container = new Container()
 
-  // Unit visual: a small green square
-  const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.soldier.radius)
-  circle.fill(player?.color ?? 'gray')
+  const sprite = new Sprite(pixiReferences.textures.soldier)
+  sprite.anchor.set(0.5)
+  sprite.tint = player ? player.color : 'gray'
 
   // Add both to the container
-  container.addChild(circle)
+  container.addChild(sprite)
   appContainer.addChild(container)
 
-  const result = { container: container, circle: circle }
+  const result = { container: container, sprite: sprite }
   pixiReferences.units.set(id, result)
   return result
 }
@@ -160,12 +160,11 @@ const createSoldier = (
 
   const container = new Container()
 
-  // Soldier visual: a small blue square
-  const circle = new Graphics()
-  circle.circle(0, 0, staticWorldConfig.soldier.radius) // Draw circle with radius 20
-  circle.fill(player?.color ?? 'gray')
+  const sprite = new Sprite(pixiReferences.textures.soldier)
+  sprite.anchor.set(0.5)
+  sprite.tint = player ? player.color : 'gray'
 
-  container.addChild(circle)
+  container.addChild(sprite)
   appContainer.addChild(container)
 
   container.interactive = true
@@ -173,7 +172,7 @@ const createSoldier = (
     onClick(unitId)
   })
 
-  const result = { container: container, circle: circle }
+  const result = { container: container, sprite: sprite }
   pixiReferences.player.set(id, result)
   return result
 }
