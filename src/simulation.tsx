@@ -23,7 +23,7 @@ export const staticWorldConfig = {
     runForcePerKg: 2.5 * natureConst.g,
   },
   player: {
-    radius: 10,
+    radius: 5,
   },
   unit: {
     flagSize: 2,
