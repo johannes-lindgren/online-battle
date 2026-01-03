@@ -24,14 +24,6 @@ export const palette: Readonly<Record<string, string>> = {
   salmon: '#FA8072',
   brown: '#A52A2A',
   sienna: '#A0522D',
-  olive: '#808000',
-  navy: '#000080',
-  maroon: '#800000',
-  gray: '#808080',
-  lightgray: '#D3D3D3',
-  slate: '#708090',
-  black: '#000000',
-  white: '#FFFFFF',
 } as const
 
 export const pseudoRandomColor = (seed: string): string => {

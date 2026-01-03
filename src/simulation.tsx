@@ -3,21 +3,30 @@ import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { normalized, origo, scale, sub } from './math/Vector2'
 
+const natureConst = {
+  g: 9.82,
+}
+
 /*
  * Properties that never change after initialization.
  * These properties do not need to be synchronized between server and clients.
  */
 export const staticWorldConfig = {
   soldier: {
-    radius: 10,
-    walkForce: 1e2,
+    radius: 5,
+    mass: 70,
+    linearDamping: 0.5,
+    friction: 0.2,
+    restitution: 0.1,
+    // The force is proportional to the mass of the player
+    walkForcePerKg: 1.3 * natureConst.g,
+    runForcePerKg: 2.5 * natureConst.g,
   },
   player: {
-    radius: 20,
-    walkForce: 1e6,
+    radius: 5,
   },
   unit: {
-    flagSize: 15,
+    flagSize: 2,
   },
 } as const
 
@@ -40,15 +49,16 @@ const createPlayer = (
   // Create new rigid body for this player as a ball
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
-    .setLinearDamping(3.0) // Add damping to slow down over time (5.0 = strong air resistance)
+    .setLinearDamping(staticWorldConfig.soldier.linearDamping) // Add damping to slow down over time (5.0 = strong air resistance)
 
   const rigidBody = world.createRigidBody(rigidBodyDesc)
   const handle = rigidBody.handle
 
   // Add a ball collider with radius 20 and friction
   const colliderDesc = RAPIER.ColliderDesc.ball(staticWorldConfig.player.radius)
-    .setFriction(0.5) // Add friction for contact with surfaces
-    .setRestitution(0.3) // Add some bounciness (0 = no bounce, 1 = perfect bounce)
+    .setMass(staticWorldConfig.soldier.mass)
+    .setFriction(staticWorldConfig.soldier.friction)
+    .setRestitution(staticWorldConfig.soldier.restitution)
 
   world.createCollider(colliderDesc, rigidBody)
   // Store bidirectional mapping
@@ -80,7 +90,7 @@ const createSolider = (
 ): RAPIER.RigidBody => {
   const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(0, 0)
-    .setLinearDamping(1.0)
+    .setLinearDamping(staticWorldConfig.soldier.linearDamping)
 
   const rigidBody = world.createRigidBody(rigidBodyDesc)
   const handle = rigidBody.handle
@@ -89,8 +99,10 @@ const createSolider = (
   const colliderDesc = RAPIER.ColliderDesc.ball(
     staticWorldConfig.soldier.radius
   )
-    .setFriction(0.4)
-    .setMass(2)
+    .setFriction(staticWorldConfig.soldier.friction)
+    .setMass(staticWorldConfig.soldier.mass)
+    .setRestitution(staticWorldConfig.soldier.restitution)
+
   world.createCollider(colliderDesc, rigidBody)
 
   worldReferences.soldier.set(soldierId, handle)
@@ -159,7 +171,8 @@ export const syncToWorld = (
     // Apply new force based on current input
     const input = state.inputs[playerId]
     if (input) {
-      const forceMultiplier = staticWorldConfig.player.walkForce
+      const forceMultiplier =
+        staticWorldConfig.soldier.runForcePerKg * rigidBody.mass()
       rigidBody.addForce(scale(input.movingDirection, forceMultiplier), true)
     }
   })
@@ -174,7 +187,7 @@ export const syncToWorld = (
     if (unit) {
       const directionToTarget =
         normalized(sub(unit.position, soldier.position)) ?? origo
-      const force = staticWorldConfig.soldier.walkForce
+      const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
 
       rigidBody.addForce(scale(directionToTarget, force), true)
     }
