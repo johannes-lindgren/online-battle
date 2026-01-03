@@ -281,6 +281,9 @@ const initializeGame = async (
     backgroundColor: 0x1a1a1a,
   })
 
+  // Prevent the browser context menu on right-click over the canvas
+  app.view.addEventListener('contextmenu', (ev) => ev.preventDefault())
+
   // Invert Y-axis to match physics coordinate system (Y+ = up)
 
   const rootContainer = new Container()
@@ -383,7 +386,17 @@ const initializeGame = async (
   app.stage.hitArea = app.screen
   app.stage.eventMode = 'static'
   app.stage.on('pointerdown', (e) => {
-    const worldPos = worldContainer.toLocal(e.global)
+    // Access original mouse event to check the button (0 left, 1 middle, 2 right)
+    const interaction = (e as any).data
+    const original = interaction?.originalEvent as MouseEvent | undefined
+    if (!original || original.button !== 2) {
+      // ignore non-right-clicks
+      return
+    }
+
+    // Use interaction global to correctly map pointer position
+    const globalPoint = interaction.global ?? (e as any).global
+    const worldPos = worldContainer.toLocal(globalPoint)
 
     if (playerInput.selectedUnitId === undefined) {
       return

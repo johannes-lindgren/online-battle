@@ -73,7 +73,7 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
   Array(3)
     .fill(0)
     .forEach(() => {
-      createUnitCompositions(state, playerId, 5)
+      createUnitCompositions(state, playerId, 15)
     })
 
   const index = Object.keys(state.players).length
