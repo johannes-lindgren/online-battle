@@ -24,7 +24,7 @@ export const staticWorldConfig = {
     mass: 70,
     linearDamping: 0.5,
     friction: 0.2,
-    restitution: 0.1,
+    restitution: 0.0,
     // The force is proportional to the mass of the player
     walkForcePerKg: 1.3 * natureConst.g,
     runForcePerKg: 2.5 * natureConst.g,
@@ -219,8 +219,7 @@ export const syncToWorld = (
   })
 }
 
-const avoidanceDist = staticWorldConfig.soldier.radius * 2 * 1.5
-const avoidanceRadiusSquared = avoidanceDist * avoidanceDist
+const avoidanceDist = staticWorldConfig.soldier.radius * 0.5
 const avoidanceShape = new RAPIER.Ball(avoidanceDist)
 
 /*
@@ -260,13 +259,18 @@ const updateSoldier = (
       return true // Continue checking other colliders
     }
   )
+  const closestDistance =
+    Math.sqrt(closestDistanceSquared) - staticWorldConfig.soldier.radius * 2
 
   // Combine target seeking with avoidance
   const directionToTarget =
     normalized(sub(unit.position, soldier.position)) ?? origo
-  const avoidanceWeight =
-    closestDistanceSquared < avoidanceRadiusSquared ? 1 : 0
-
+  const avoidanceWeight = Math.max(
+    // The close the soldier is, the more avoidance matters: from no concern until it takes full priority
+    1 - closestDistance / avoidanceDist,
+    // The soldier is not close enough to another soldier to care about avoidance
+    0
+  )
   const finalDirection =
     normalized(
       add(
