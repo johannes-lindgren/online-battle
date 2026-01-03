@@ -1,7 +1,6 @@
 import { type Vector2, vector, add } from './math/Vector2.ts'
 import { v4 as uuid } from 'uuid'
 import { pseudoRandomColor } from './randomColor.ts'
-import * as constants from 'node:constants'
 import { staticWorldConfig } from './simulation.tsx'
 
 export type PlayerInstruction = {
@@ -55,17 +54,17 @@ const createUnitCompositions = (
   playerId: string,
   position: Vector2
 ) => {
-  const soliderCount: number = 20
+  const soldierCount: number = 20
   const unit: Unit = { position, playerId: playerId }
   const unitId = uuid()
   state.units[unitId] = unit
 
-  Array(soliderCount)
+  Array(soldierCount)
     .fill(0)
     .forEach((_zero, i) => {
       const soldierPos = add(
         unit.position,
-        vector((i - soldierCount / 2) * staticWorldConfig.soldier.radius * 2)
+        vector((i - soldierCount / 2) * staticWorldConfig.soldier.radius * 2, 0)
       )
       spawnSolider(state, unitId, soldierPos)
     })
@@ -92,7 +91,7 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
 const createArmy = (state: GameState, playerId: string, position: Vector2) => {
   const unitCount: number = 3
   // Add unit
-  const unitDistance = 100
+  const unitDistance = 400
   Array(unitCount)
     .fill(0)
     .forEach((_zero, i) => {
