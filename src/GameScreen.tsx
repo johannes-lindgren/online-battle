@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Application, Container } from 'pixi.js'
-import { joinRoom } from 'trystero'
-import { selfId } from 'trystero'
+import { joinRoom } from 'trystero/mqtt'
+import { selfId } from 'trystero/mqtt'
 import {
   createInitialState,
   type GameState,
