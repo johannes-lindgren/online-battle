@@ -1,7 +1,14 @@
 // Add a reference to worldReferences
 import RAPIER from '@dimforge/rapier2d'
-import type { GameState, PlayerInput, Soldier, Unit } from './Game.tsx'
-import { normalized, origo, scale, sub } from './math/Vector2'
+import type { GameState, PlayerInput, Soldier } from './Game.tsx'
+import {
+  add,
+  lengthSquared,
+  normalized,
+  origo,
+  scale,
+  sub,
+} from './math/Vector2'
 
 const natureConst = {
   g: 9.82,
@@ -183,7 +190,7 @@ export const syncToWorld = (
     rigidBody.setTranslation(soldier.position, false)
     rigidBody.resetForces(true)
 
-    updateSoldier(state, soldier, rigidBody)
+    updateSoldier(state, soldierId, soldier, rigidBody, world)
   })
 
   // Third loop: Remove rigid bodies for disconnected players
@@ -212,23 +219,64 @@ export const syncToWorld = (
   })
 }
 
+const avoidanceDist = staticWorldConfig.soldier.radius * 2 * 1.5
+const avoidanceRadiusSquared = avoidanceDist * avoidanceDist
+const avoidanceShape = new RAPIER.Ball(avoidanceDist)
+
 /*
  * Soldier AI
  */
 const updateSoldier = (
   state: GameState,
+  _soldierId: string,
   soldier: Soldier,
-  rigidBody: RAPIER.RigidBody
+  rigidBody: RAPIER.RigidBody,
+  world: RAPIER.World
 ) => {
   const unit = state.units[soldier.unitId]
   if (!unit) {
     return
   }
+
+  let closestDistanceSquared = Infinity
+  let avoidanceDirection = origo
+
+  world.intersectionsWithShape(
+    soldier.position,
+    0,
+    avoidanceShape,
+    (collider) => {
+      const otherBody = collider.parent()
+      if (otherBody && otherBody.handle !== rigidBody.handle) {
+        const otherPos = otherBody.translation()
+        const diff = sub(soldier.position, otherPos)
+        const distanceSquared = lengthSquared(diff)
+
+        if (distanceSquared < closestDistanceSquared) {
+          closestDistanceSquared = distanceSquared
+          avoidanceDirection = normalized(diff) ?? origo
+        }
+      }
+      return true // Continue checking other colliders
+    }
+  )
+
+  // Combine target seeking with avoidance
   const directionToTarget =
     normalized(sub(unit.position, soldier.position)) ?? origo
-  const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
+  const avoidanceWeight =
+    closestDistanceSquared < avoidanceRadiusSquared ? 1 : 0
 
-  rigidBody.addForce(scale(directionToTarget, force), true)
+  const finalDirection =
+    normalized(
+      add(
+        scale(directionToTarget, 1 - avoidanceWeight),
+        scale(avoidanceDirection, avoidanceWeight)
+      )
+    ) ?? directionToTarget
+
+  const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
+  rigidBody.addForce(scale(finalDirection, force), true)
 }
 
 export const syncFromWorld = (
