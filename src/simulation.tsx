@@ -28,7 +28,7 @@ export const staticWorldConfig = {
   unit: {
     flagSize: 2,
   },
-}
+} as const
 
 // Bidirectional mapping between playerIds and rigid body handles
 export type WorldReferences = {
