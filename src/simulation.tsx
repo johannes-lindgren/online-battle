@@ -219,8 +219,10 @@ export const syncToWorld = (
   })
 }
 
-const avoidanceDist = staticWorldConfig.soldier.radius * 0.5
-const avoidanceShape = new RAPIER.Ball(avoidanceDist)
+const avoidanceDist = staticWorldConfig.soldier.radius * 1
+const avoidanceShape = new RAPIER.Ball(
+  staticWorldConfig.soldier.radius * 2 + avoidanceDist
+)
 
 /*
  * Soldier AI
