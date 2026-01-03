@@ -23,17 +23,21 @@ export const createGamePixiReferences = async (
   }
 }
 const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
-  // Create white soldier texture that can be tinted
-  const circle = new Graphics()
-  const circleRadius = Math.max(
+  // Create white triangle texture that can be tinted
+  const triangle = new Graphics()
+  const triangleSize = Math.max(
     staticWorldConfig.soldier.radius,
     staticWorldConfig.unit.flagSize,
     staticWorldConfig.player.radius
   )
-  circle.circle(0, 0, circleRadius)
-  circle.fill(0xffffff) // White color
+  triangle.poly([
+    { x: 0, y: -triangleSize },
+    { x: -triangleSize * 0.866, y: triangleSize * 0.5 },
+    { x: triangleSize * 0.866, y: triangleSize * 0.5 },
+  ])
+  triangle.fill(0xffffff) // White color
 
-  const soldierTexture = renderer.extract.texture(circle)
+  const soldierTexture = renderer.extract.texture(triangle)
 
   return {
     soldier: soldierTexture,
@@ -219,6 +223,7 @@ export const syncToPixi = (
       onClick
     )
     ref.container.position.set(soldier.position.x, soldier.position.y)
+    ref.container.angle = soldier.angle
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left

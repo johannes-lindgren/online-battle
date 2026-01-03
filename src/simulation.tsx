@@ -188,6 +188,7 @@ export const syncToWorld = (
     const rigidBody = getOrCreateSoldier(world, worldReferences, soldierId)
 
     rigidBody.setTranslation(soldier.position, false)
+    rigidBody.setRotation(soldier.angle, false)
     rigidBody.resetForces(true)
 
     updateSoldier(state, soldierId, soldier, rigidBody, world)
@@ -327,6 +328,7 @@ export const syncFromWorld = (
       nextState.soldiers[soldierId] = {
         ...soldier,
         position: { x: position.x, y: position.y },
+        angle: rigidBody.rotation(),
       }
     } else {
       const s = currentState.soldiers[soldierId]

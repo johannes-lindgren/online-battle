@@ -17,6 +17,7 @@ export type Unit = {
 
 export type Soldier = {
   position: Vector2
+  angle: number
   unitId: string
 }
 
@@ -50,7 +51,12 @@ export function createInitialState(playerIds: string[]): GameState {
   return initialState
 }
 
-const createUnit = (state: GameState, playerId: string, position: Vector2) => {
+const createUnit = (
+  state: GameState,
+  playerId: string,
+  position: Vector2,
+  angle: number
+) => {
   const lineDepth = 3
   const lineWidth = 10
   // Relative to the unit position
@@ -76,7 +82,7 @@ const createUnit = (state: GameState, playerId: string, position: Vector2) => {
   state.units[unitId] = unit
 
   soliderPositions.forEach((pos) => {
-    spawnSolider(state, unitId, pos)
+    spawnSolider(state, unitId, pos, angle)
   })
 }
 
@@ -102,19 +108,21 @@ const createArmy = (state: GameState, playerId: string, position: Vector2) => {
   const unitCount: number = 10
   // Add unit
   const unitDistance = 150
+  const angle = 0
 
   zeros(unitCount).forEach((_zero, i) => {
     const unitPos = add(position, vector((i - unitCount / 2) * unitDistance, 0))
-    createUnit(state, playerId, unitPos)
+    createUnit(state, playerId, unitPos, angle)
   })
 }
 
 const spawnSolider = (
   state: GameState,
   unitId: string,
-  position: Vector2
+  position: Vector2,
+  angle: number
 ): void => {
-  const soldier = { position, unitId: unitId }
+  const soldier: Soldier = { position, unitId, angle }
 
   const soldierId = uuid()
   state.soldiers[soldierId] = soldier
