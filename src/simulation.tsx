@@ -1,6 +1,6 @@
 // Add a reference to worldReferences
 import RAPIER from '@dimforge/rapier2d'
-import type { GameState, PlayerInput } from './Game.tsx'
+import type { GameState, PlayerInput, Soldier, Unit } from './Game.tsx'
 import { normalized, origo, scale, sub } from './math/Vector2'
 
 const natureConst = {
@@ -182,15 +182,8 @@ export const syncToWorld = (
 
     rigidBody.setTranslation(soldier.position, false)
     rigidBody.resetForces(true)
-    // AI: Solider follow their unit
-    const unit = state.units[soldier.unitId]
-    if (unit) {
-      const directionToTarget =
-        normalized(sub(unit.position, soldier.position)) ?? origo
-      const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
 
-      rigidBody.addForce(scale(directionToTarget, force), true)
-    }
+    updateSoldier(state, soldier, rigidBody)
   })
 
   // Third loop: Remove rigid bodies for disconnected players
@@ -217,6 +210,25 @@ export const syncToWorld = (
     worldReferences.soldier.delete(soldierId)
     console.log(`Removed rigid body for soldier ${soldierId}`)
   })
+}
+
+/*
+ * Soldier AI
+ */
+const updateSoldier = (
+  state: GameState,
+  soldier: Soldier,
+  rigidBody: RAPIER.RigidBody
+) => {
+  const unit = state.units[soldier.unitId]
+  if (!unit) {
+    return
+  }
+  const directionToTarget =
+    normalized(sub(unit.position, soldier.position)) ?? origo
+  const force = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
+
+  rigidBody.addForce(scale(directionToTarget, force), true)
 }
 
 export const syncFromWorld = (
