@@ -108,7 +108,6 @@ const createUnit = (
   const sprite = new Sprite(pixiReferences.textures.soldier)
   sprite.anchor.set(0.5)
   sprite.tint = player ? player.color : 'gray'
-  // sprite.scale = staticWorldConfig.unit.flagSize
 
   // Add both to the container
   container.addChild(sprite)
