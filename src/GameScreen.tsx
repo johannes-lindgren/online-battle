@@ -147,21 +147,17 @@ const initializeGame = async (
   app.stage.hitArea = app.screen
   app.stage.eventMode = 'static'
   app.stage.on('pointerdown', (e) => {
-    // Access original mouse event to check the button (0 left, 1 middle, 2 right)
-    const interaction = (e as any).data
-    const original = interaction?.originalEvent as MouseEvent | undefined
-    if (!original || original.button !== 2) {
+    const { nativeEvent } = e.originalEvent
+    if (nativeEvent.button !== 2) {
       // ignore non-right-clicks
       return
     }
 
-    // Use interaction global to correctly map pointer position
-    const globalPoint = interaction.global ?? (e as any).global
-    const worldPos = worldContainer.toLocal(globalPoint)
-
     if (playerInput.selectedUnitId === undefined) {
       return
     }
+
+    const worldPos = worldContainer.toLocal(e.global)
 
     playerInput.instructions.push({
       tag: 'moveUnit',
@@ -201,7 +197,6 @@ const initializeGame = async (
   // }
   const handleClick = (unitId: string) => {
     playerInput.selectedUnitId = unitId
-    console.log(playerInput.selectedUnitId)
   }
   app.ticker.add(() => {
     // Process own input.
