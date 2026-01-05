@@ -24,7 +24,7 @@ export const createGamePixiReferences = async (
   }
 }
 
-const toPixiAngle = (radians: number): number => -radians * (180 / Math.PI)
+const toPixiAngle = (radians: number): number => radians * (180 / Math.PI)
 
 const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
   // Create white triangle texture that can be tinted

@@ -233,7 +233,7 @@ const avoidanceShape = new RAPIER.Ball(
   staticWorldConfig.soldier.radius * 2 + avoidanceDist
 )
 
-const rotateSoldierTowards = (
+const torqueTowards = (
   rigidBody: RAPIER.RigidBody,
   targetDirection: Vector2,
   torqueMultiplier: number
@@ -311,7 +311,7 @@ const updateSoldier = (
   // Rotate soldier to face movement direction
   const movementDirection = normalized(rigidBody.linvel())
   if (movementDirection) {
-    rotateSoldierTowards(
+    torqueTowards(
       rigidBody,
       directionToTarget,
       staticWorldConfig.soldier.torquePerKg * rigidBody.mass() * 1000
