@@ -228,10 +228,12 @@ export const syncToWorld = (
   })
 }
 
-const avoidanceDist = staticWorldConfig.soldier.radius * 1
+const avoidanceDist = staticWorldConfig.soldier.radius
+const alignmentRadius = staticWorldConfig.soldier.radius * 6
 const avoidanceShape = new RAPIER.Ball(
   staticWorldConfig.soldier.radius * 2 + avoidanceDist
 )
+const alignmentShape = new RAPIER.Ball(alignmentRadius)
 
 const torqueTowards = (
   rigidBody: RAPIER.RigidBody,
@@ -244,7 +246,7 @@ const torqueTowards = (
 }
 
 /*
- * Soldier AI
+ * Soldier AI with flocking behavior (alignment and cohesion)
  */
 const updateSoldier = (
   state: GameState,
@@ -260,7 +262,11 @@ const updateSoldier = (
 
   let closestDistanceSquared = Infinity
   let avoidanceDirection = origo
+  let neighborCount = 0
+  let averageVelocity = origo
+  let averagePosition = origo
 
+  // First pass: check for close neighbors (avoidance)
   world.intersectionsWithShape(
     soldier.position,
     0,
@@ -277,26 +283,81 @@ const updateSoldier = (
           avoidanceDirection = normalized(diff) ?? origo
         }
       }
-      return true // Continue checking other colliders
+      return true
     }
   )
+
+  // Second pass: gather alignment and cohesion data from wider neighborhood
+  world.intersectionsWithShape(
+    soldier.position,
+    0,
+    alignmentShape,
+    (collider) => {
+      const otherBody = collider.parent()
+      if (otherBody && otherBody.handle !== rigidBody.handle) {
+        const otherPos = otherBody.translation()
+        const diff = sub(soldier.position, otherPos)
+        const distanceSquared = lengthSquared(diff)
+
+        if (distanceSquared < alignmentRadius * alignmentRadius) {
+          averageVelocity = add(averageVelocity, otherBody.linvel())
+          averagePosition = add(averagePosition, otherPos)
+          neighborCount++
+        }
+      }
+      return true
+    }
+  )
+
   const closestDistance =
     Math.sqrt(closestDistanceSquared) - staticWorldConfig.soldier.radius * 2
 
-  // Combine target seeking with avoidance
-  const directionToTarget =
-    normalized(sub(unit.position, soldier.position)) ?? origo
-  const avoidanceWeight = Math.max(
-    // The close the soldier is, the more avoidance matters: from no concern until it takes full priority
-    1 - closestDistance / avoidanceDist,
-    // The soldier is not close enough to another soldier to care about avoidance
-    0
-  )
+  // Calculate alignment and cohesion vectors
+  let alignmentDirection = origo
+  let cohesionDirection = origo
+  if (neighborCount > 0) {
+    // Alignment: match average velocity direction of neighbors
+    averageVelocity = scale(averageVelocity, 1 / neighborCount)
+    alignmentDirection = normalized(averageVelocity) ?? origo
+
+    // Cohesion: move toward center of mass of neighbors
+    averagePosition = scale(averagePosition, 1 / neighborCount)
+    cohesionDirection =
+      normalized(sub(averagePosition, soldier.position)) ?? origo
+  }
+
+  // Direction to unit goal
+  const toTarget = sub(unit.position, soldier.position)
+  const distanceToTarget = Math.sqrt(lengthSquared(toTarget))
+  const directionToTarget = normalized(toTarget) ?? origo
+
+  // Stop moving if we're close enough to the target
+  const stoppingDistance = staticWorldConfig.soldier.radius * 2 * 10
+  if (distanceToTarget < stoppingDistance) {
+    // Apply braking force to stop the soldier
+    const currentVelocity = rigidBody.linvel()
+    const brakingForce = scale(currentVelocity, -rigidBody.mass() * 2)
+    rigidBody.addForce(brakingForce, true)
+    return
+  }
+
+  // Combine behaviors with weights
+  const avoidanceWeight = Math.max(1 - closestDistance / avoidanceDist, 0)
+  const alignmentWeight = neighborCount > 0 ? 0.4 : 0
+  const cohesionWeight = neighborCount > 0 ? 0.2 : 0
+  const targetWeight = 1 - avoidanceWeight
+
   const finalDirection =
     normalized(
       add(
-        scale(directionToTarget, 1 - avoidanceWeight),
-        scale(avoidanceDirection, avoidanceWeight)
+        add(
+          add(
+            scale(directionToTarget, targetWeight),
+            scale(avoidanceDirection, avoidanceWeight)
+          ),
+          scale(alignmentDirection, alignmentWeight)
+        ),
+        scale(cohesionDirection, cohesionWeight)
       )
     ) ?? directionToTarget
 
@@ -308,12 +369,14 @@ const updateSoldier = (
   const force = scale(finalDirection, forceMagnitude)
   rigidBody.addForce(force, true)
 
-  // Rotate soldier to face movement direction
+  // Rotate soldier to face the alignment direction when in formation, otherwise face target
+  const rotationTarget =
+    neighborCount > 2 ? alignmentDirection : directionToTarget
   const movementDirection = normalized(rigidBody.linvel())
   if (movementDirection) {
     torqueTowards(
       rigidBody,
-      directionToTarget,
+      rotationTarget,
       staticWorldConfig.soldier.torquePerKg * rigidBody.mass() * 1000
     )
   }

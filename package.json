@@ -22,6 +22,7 @@
     "@martini-kit/transport-local": "0.1.1",
     "@martini-kit/transport-trystero": "0.1.1",
     "mqtt": "^5.14.1",
+    "pixi-filters": "^6.1.5",
     "pixi.js": "^8.14.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -43,8 +44,8 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.3.0",
-    "vitest": "^4.0.16",
-    "vite-plugin-wasm": "^3.5.0"
+    "vite-plugin-wasm": "^3.5.0",
+    "vitest": "^4.0.16"
   },
   "packageManager": "pnpm@9.14.1+sha512.7f1de9cffea40ff4594c48a94776112a0db325e81fb18a9400362ff7b7247f4fbd76c3011611c9f8ac58743c3dc526017894e07948de9b72052f874ee2edfdcd"
 }

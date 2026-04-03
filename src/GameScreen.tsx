@@ -217,7 +217,8 @@ const initializeGame = async (
       currentState,
       selfId,
       screenDimensions,
-      handleClick
+      handleClick,
+      playerInput
     )
   })
 

@@ -1,7 +1,8 @@
 import { Container, Graphics, type Renderer, Sprite, Texture } from 'pixi.js'
-import type { GameState } from './Game.tsx'
+import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.tsx'
 import { fromAngle, scale } from './math/Vector2.ts'
+import { OutlineFilter } from 'pixi-filters'
 
 type PixiUnitRef = { container: Container; sprite: Sprite }
 type PixiTextures = {
@@ -188,8 +189,10 @@ export const syncToPixi = (
   state: GameState,
   selfId: string,
   screenDimensions: { width: number; height: number },
-  onClick: (unitId: string) => void
+  onClick: (unitId: string) => void,
+  playerInput: PlayerInput
 ) => {
+  const { selectedUnitId } = playerInput
   // Update camera position to follow own player
   const ownPlayer = state.players[selfId]
   if (ownPlayer) {
@@ -232,6 +235,18 @@ export const syncToPixi = (
     )
     ref.container.position.set(soldier.position.x, soldier.position.y)
     ref.container.angle = toPixiAngle(soldier.angle)
+
+    // Apply highlight filter if this soldier belongs to the selected unit
+    if (selectedUnitId !== undefined && soldier.unitId === selectedUnitId) {
+      if (!ref.sprite.filters) {
+        console.log('adding')
+        const outlineFilter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
+        ref.sprite.filters = [outlineFilter]
+      }
+    } else {
+      // console.log('removing')
+      ref.sprite.filters = null
+    }
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left
