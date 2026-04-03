@@ -5,6 +5,7 @@ import {
   add,
   cross,
   fromAngle,
+  length,
   lengthSquared,
   normalized,
   origo,
@@ -24,6 +25,7 @@ const natureConst = {
 export const staticWorldConfig = {
   soldier: {
     radius: 5,
+    stoppingDistance: 100,
     mass: 70,
     linearDamping: 0.5,
     angularDamping: 5,
@@ -35,7 +37,7 @@ export const staticWorldConfig = {
     torquePerKg: 0.1,
   },
   player: {
-    radius: 5,
+    radius: 7,
   },
   unit: {
     flagSize: 2,
@@ -166,11 +168,13 @@ export const applyInput = (
  * @param world
  * @param state
  * @param worldReferences
+ * @param unitAveragePositions
  */
 export const syncToWorld = (
   world: RAPIER.World,
   state: GameState,
-  worldReferences: WorldReferences
+  worldReferences: WorldReferences,
+  unitAveragePositions: Map<string, Vector2>
 ) => {
   // First loop: Create rigid bodies for new players
   Object.entries(state.players).forEach(([playerId, player]) => {
@@ -199,7 +203,9 @@ export const syncToWorld = (
     rigidBody.resetForces(true)
     rigidBody.resetTorques(true)
 
-    updateSoldier(state, soldierId, soldier, rigidBody, world)
+    const unitAvgPos =
+      unitAveragePositions.get(soldier.unitId) ?? soldier.position
+    updateSoldier(state, soldierId, soldier, rigidBody, world, unitAvgPos)
   })
 
   // Third loop: Remove rigid bodies for disconnected players
@@ -245,6 +251,94 @@ const torqueTowards = (
   rigidBody.addTorque(torque, true)
 }
 
+const findClosestNeighbor = (
+  world: RAPIER.World,
+  position: Vector2,
+  rigidBody: RAPIER.RigidBody,
+  shape: RAPIER.Ball
+): { direction: Vector2; distanceSquared: number } => {
+  let closestDistanceSquared = Infinity
+  let avoidanceDirection = origo
+
+  world.intersectionsWithShape(position, 0, shape, (collider) => {
+    const otherBody = collider.parent()
+    if (otherBody && otherBody.handle !== rigidBody.handle) {
+      const otherPos = otherBody.translation()
+      const diff = sub(position, otherPos)
+      const distanceSquared = lengthSquared(diff)
+
+      if (distanceSquared < closestDistanceSquared) {
+        closestDistanceSquared = distanceSquared
+        avoidanceDirection = normalized(diff) ?? origo
+      }
+    }
+    return true
+  })
+
+  return {
+    direction: avoidanceDirection,
+    distanceSquared:
+      closestDistanceSquared - staticWorldConfig.soldier.radius * 2,
+  }
+}
+
+const gatherFlockingNeighbors = (
+  world: RAPIER.World,
+  position: Vector2,
+  rigidBody: RAPIER.RigidBody,
+  shape: RAPIER.Ball,
+  maxDistanceSquared: number
+): {
+  neighborCount: number
+  averageVelocity: Vector2
+  averagePosition: Vector2
+} => {
+  let neighborCount = 0
+  let averageVelocity = origo
+  let averagePosition = origo
+
+  world.intersectionsWithShape(position, 0, shape, (collider) => {
+    const otherBody = collider.parent()
+    if (otherBody && otherBody.handle !== rigidBody.handle) {
+      const otherPos = otherBody.translation()
+      const diff = sub(position, otherPos)
+      const distanceSquared = lengthSquared(diff)
+
+      if (distanceSquared < maxDistanceSquared) {
+        averageVelocity = add(averageVelocity, otherBody.linvel())
+        averagePosition = add(averagePosition, otherPos)
+        neighborCount++
+      }
+    }
+    return true
+  })
+
+  return { neighborCount, averageVelocity, averagePosition }
+}
+
+const computeUnitAveragePositions = (
+  state: GameState
+): Map<string, Vector2> => {
+  const unitPositions = new Map<string, Vector2>()
+  const unitCounts = new Map<string, number>()
+
+  Object.values(state.soldiers).forEach((soldier) => {
+    const currentSum = unitPositions.get(soldier.unitId) ?? origo
+    const currentCount = unitCounts.get(soldier.unitId) ?? 0
+
+    unitPositions.set(soldier.unitId, add(currentSum, soldier.position))
+    unitCounts.set(soldier.unitId, currentCount + 1)
+  })
+
+  const averages = new Map<string, Vector2>()
+  unitPositions.forEach((sum, unitId) => {
+    const count = unitCounts.get(unitId) ?? 1
+    averages.set(unitId, scale(sum, 1 / count))
+  })
+
+  return averages
+}
+
 /*
  * Soldier AI with flocking behavior (alignment and cohesion)
  */
@@ -253,93 +347,55 @@ const updateSoldier = (
   _soldierId: string,
   soldier: Soldier,
   rigidBody: RAPIER.RigidBody,
-  world: RAPIER.World
+  world: RAPIER.World,
+  unitAveragePosition: Vector2
 ) => {
   const unit = state.units[soldier.unitId]
   if (!unit) {
     return
   }
 
-  let closestDistanceSquared = Infinity
-  let avoidanceDirection = origo
-  let neighborCount = 0
-  let averageVelocity = origo
-  let averagePosition = origo
+  const { direction: avoidanceDirection, distanceSquared: closestDistance } =
+    findClosestNeighbor(world, soldier.position, rigidBody, avoidanceShape)
 
-  // First pass: check for close neighbors (avoidance)
-  world.intersectionsWithShape(
-    soldier.position,
-    0,
-    avoidanceShape,
-    (collider) => {
-      const otherBody = collider.parent()
-      if (otherBody && otherBody.handle !== rigidBody.handle) {
-        const otherPos = otherBody.translation()
-        const diff = sub(soldier.position, otherPos)
-        const distanceSquared = lengthSquared(diff)
+  const { neighborCount, averageVelocity, averagePosition } =
+    gatherFlockingNeighbors(
+      world,
+      soldier.position,
+      rigidBody,
+      alignmentShape,
+      alignmentRadius * alignmentRadius
+    )
 
-        if (distanceSquared < closestDistanceSquared) {
-          closestDistanceSquared = distanceSquared
-          avoidanceDirection = normalized(diff) ?? origo
-        }
-      }
-      return true
-    }
-  )
+  const alignmentDirection =
+    neighborCount > 0
+      ? (normalized(scale(averageVelocity, 1 / neighborCount)) ?? origo)
+      : origo
 
-  // Second pass: gather alignment and cohesion data from wider neighborhood
-  world.intersectionsWithShape(
-    soldier.position,
-    0,
-    alignmentShape,
-    (collider) => {
-      const otherBody = collider.parent()
-      if (otherBody && otherBody.handle !== rigidBody.handle) {
-        const otherPos = otherBody.translation()
-        const diff = sub(soldier.position, otherPos)
-        const distanceSquared = lengthSquared(diff)
-
-        if (distanceSquared < alignmentRadius * alignmentRadius) {
-          averageVelocity = add(averageVelocity, otherBody.linvel())
-          averagePosition = add(averagePosition, otherPos)
-          neighborCount++
-        }
-      }
-      return true
-    }
-  )
-
-  const closestDistance =
-    Math.sqrt(closestDistanceSquared) - staticWorldConfig.soldier.radius * 2
-
-  // Calculate alignment and cohesion vectors
-  let alignmentDirection = origo
-  let cohesionDirection = origo
-  if (neighborCount > 0) {
-    // Alignment: match average velocity direction of neighbors
-    averageVelocity = scale(averageVelocity, 1 / neighborCount)
-    alignmentDirection = normalized(averageVelocity) ?? origo
-
-    // Cohesion: move toward center of mass of neighbors
-    averagePosition = scale(averagePosition, 1 / neighborCount)
-    cohesionDirection =
-      normalized(sub(averagePosition, soldier.position)) ?? origo
-  }
+  const cohesionDirection =
+    neighborCount > 0
+      ? (normalized(
+          sub(scale(averagePosition, 1 / neighborCount), soldier.position)
+        ) ?? origo)
+      : origo
 
   // Direction to unit goal
-  const toTarget = sub(unit.position, soldier.position)
-  const distanceToTarget = Math.sqrt(lengthSquared(toTarget))
-  const directionToTarget = normalized(toTarget) ?? origo
+  const toUnitPos = sub(unit.position, soldier.position)
+  const directionToUnitPos = normalized(toUnitPos) ?? origo
 
-  // Stop moving if we're close enough to the target
-  const stoppingDistance = staticWorldConfig.soldier.radius * 2 * 10
-  if (distanceToTarget < stoppingDistance) {
-    // Apply braking force to stop the soldier
+  // Check if unit average position is close to unit.position
+  const toUnitFromAverage = sub(unit.position, unitAveragePosition)
+  const distanceUnitAverageToTarget = length(toUnitFromAverage)
+
+  // Stop moving if unit average is close enough to the target
+  if (distanceUnitAverageToTarget < 10) {
     const currentVelocity = rigidBody.linvel()
-    const brakingForce = scale(currentVelocity, -rigidBody.mass() * 2)
-    rigidBody.addForce(brakingForce, true)
+    const breakingForce = scale(currentVelocity, -rigidBody.mass() * 2)
+    rigidBody.addForce(breakingForce, true)
     return
   }
+
+  const directionToTarget = directionToUnitPos
 
   // Combine behaviors with weights
   const avoidanceWeight = Math.max(1 - closestDistance / avoidanceDist, 0)
@@ -350,13 +406,9 @@ const updateSoldier = (
   const finalDirection =
     normalized(
       add(
-        add(
-          add(
-            scale(directionToTarget, targetWeight),
-            scale(avoidanceDirection, avoidanceWeight)
-          ),
-          scale(alignmentDirection, alignmentWeight)
-        ),
+        scale(directionToTarget, targetWeight),
+        scale(avoidanceDirection, avoidanceWeight),
+        scale(alignmentDirection, alignmentWeight),
         scale(cohesionDirection, cohesionWeight)
       )
     ) ?? directionToTarget
@@ -442,7 +494,8 @@ export const simulate = (
   world: RAPIER.World,
   worldReferences: WorldReferences
 ) => {
-  syncToWorld(world, currentState, worldReferences)
+  const unitAveragePositions = computeUnitAveragePositions(currentState)
+  syncToWorld(world, currentState, worldReferences, unitAveragePositions)
   world.step()
   return syncFromWorld(world, worldReferences, currentState)
 }

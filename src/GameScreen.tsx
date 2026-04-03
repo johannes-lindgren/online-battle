@@ -13,9 +13,19 @@ import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
 import { applyInput, createWorldReferences, simulate } from './simulation'
 import { normalized, origo } from './math/Vector2.ts'
-import { createGamePixiReferences, syncToPixi } from './graphics.ts'
+import {
+  createGamePixiReferences,
+  syncToPixi,
+  type UnitClickEvent,
+} from './graphics.ts'
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected'
+
+const MouseButton = {
+  left: 0,
+  middle: 1,
+  right: 2,
+} as const
 
 interface GameProps {
   mode: 'host' | 'client'
@@ -190,13 +200,11 @@ const initializeGame = async (
     }
   }
 
-  // const handleUpdateInput = (
-  //   update: (nextInput: PlayerInput) => PlayerInput
-  // ) => {
-  //   playerInput = update(playerInput)
-  // }
-  const handleClick = (unitId: string) => {
-    playerInput.selectedUnitId = unitId
+  const handlePlayerClick = (event: UnitClickEvent) => {
+    if (event.event.button === MouseButton.left) {
+      // only select on primary key click
+      playerInput.selectedUnitId = event.unitId
+    }
   }
   app.ticker.add(() => {
     // Process own input.
@@ -217,7 +225,7 @@ const initializeGame = async (
       currentState,
       selfId,
       screenDimensions,
-      handleClick,
+      handlePlayerClick,
       playerInput
     )
   })

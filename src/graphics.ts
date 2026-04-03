@@ -1,8 +1,20 @@
-import { Container, Graphics, type Renderer, Sprite, Texture } from 'pixi.js'
+import {
+  Container,
+  Graphics,
+  type Renderer,
+  Sprite,
+  Texture,
+  type FederatedPointerEvent,
+} from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.tsx'
 import { fromAngle, scale } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
+
+export type UnitClickEvent = {
+  unitId: string
+  event: FederatedPointerEvent
+}
 
 type PixiUnitRef = { container: Container; sprite: Sprite }
 type PixiTextures = {
@@ -63,11 +75,10 @@ const createPlayer = (
   // Create a container to hold both the circle and text
   const container = new Container()
 
-  // Player visual: a colored square
+  // Player visual: a colored triangle
   const sprite = new Sprite(pixiReferences.textures.soldier)
   sprite.anchor.set(0.5)
   sprite.tint = player ? player.color : 'gray'
-  console.log('width')
   sprite.scale =
     staticWorldConfig.player.radius /
     (pixiReferences.textures.soldier.width / 2)
@@ -134,7 +145,7 @@ const createSoldier = (
   pixiReferences: PixiReferences,
   id: string,
   unitId: string,
-  onClick: (unitId: string) => void
+  onClick: (event: UnitClickEvent) => void
 ): PixiUnitRef => {
   const unit = gameState.units[unitId]
   const player = unit ? gameState.players[unit.playerId] : undefined
@@ -152,8 +163,8 @@ const createSoldier = (
   appContainer.addChild(container)
 
   container.interactive = true
-  container.on('pointerdown', () => {
-    onClick(unitId)
+  container.on('pointerdown', (e) => {
+    onClick({ unitId, event: e })
   })
 
   const result = { container: container, sprite: sprite }
@@ -166,7 +177,7 @@ const getOrCreateSoldier = (
   pixiReferences: PixiReferences,
   soldierId: string,
   unitId: string,
-  onClick: (unitId: string) => void
+  onClick: (event: UnitClickEvent) => void
 ) => {
   const existing = pixiReferences.soldier.get(soldierId)
   if (existing) {
@@ -189,7 +200,7 @@ export const syncToPixi = (
   state: GameState,
   selfId: string,
   screenDimensions: { width: number; height: number },
-  onClick: (unitId: string) => void,
+  onClick: (event: UnitClickEvent) => void,
   playerInput: PlayerInput
 ) => {
   const { selectedUnitId } = playerInput
@@ -239,7 +250,6 @@ export const syncToPixi = (
     // Apply highlight filter if this soldier belongs to the selected unit
     if (selectedUnitId !== undefined && soldier.unitId === selectedUnitId) {
       if (!ref.sprite.filters) {
-        console.log('adding')
         const outlineFilter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
         ref.sprite.filters = [outlineFilter]
       }
