@@ -49,7 +49,9 @@ const initializeGame = async (
     canvas: canvas,
     width: 1200,
     height: 600,
-    backgroundColor: 0x1a1a1a,
+    backgroundColor: 0x103010,
+    resolution: window.devicePixelRatio || 2,
+    autoDensity: true,
   })
 
   // Prevent the browser context menu on right-click over the canvas
@@ -59,8 +61,8 @@ const initializeGame = async (
 
   const rootContainer = new Container()
   const screenDimensions = {
-    width: app.canvas.width,
-    height: app.canvas.height,
+    width: app.screen.width,
+    height: app.screen.height,
   }
   rootContainer.scale.y = -1
   rootContainer.position.y = screenDimensions.height
@@ -263,7 +265,12 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
   }, [mode, roomId])
 
   return (
-    <div>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <div
         style={{
           marginBottom: '10px',

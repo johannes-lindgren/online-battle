@@ -25,6 +25,10 @@ const natureConst = {
 export const staticWorldConfig = {
   soldier: {
     radius: 5,
+    weapon: {
+      length: 20,
+      width: 0.5,
+    },
     stoppingDistance: 100,
     mass: 70,
     linearDamping: 0.5,

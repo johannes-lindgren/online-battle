@@ -5,27 +5,40 @@ import {
   Sprite,
   Texture,
   type FederatedPointerEvent,
+  Assets,
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.tsx'
 import { fromAngle, scale } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 
+const outlineFilter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
+const weakOutlineFilter = new OutlineFilter(1, 0xffffff, 0.1, 0.2)
+
 export type UnitClickEvent = {
   unitId: string
   event: FederatedPointerEvent
 }
 
-type PixiUnitRef = { container: Container; sprite: Sprite }
+type PixiUnitRef = {
+  container: Container
+  sprite: Sprite
+  weapon?: Graphics
+}
+
 type PixiTextures = {
   soldier: Texture
+  soldierImage: Texture
 }
+
 type PixiReferences = {
   player: Map<string, PixiUnitRef>
   soldier: Map<string, PixiUnitRef>
   units: Map<string, PixiUnitRef>
+  outlineFilters: Map<string, OutlineFilter>
   textures: PixiTextures
 }
+
 export const createGamePixiReferences = async (
   renderer: Renderer
 ): Promise<PixiReferences> => {
@@ -34,6 +47,7 @@ export const createGamePixiReferences = async (
     soldier: new Map(),
     units: new Map(),
     textures: await createTextures(renderer),
+    outlineFilters: new Map(),
   }
 }
 
@@ -60,10 +74,34 @@ const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
 
   const soldierTexture = renderer.extract.texture(triangle)
 
+  const soldierImage = await Assets.load('/soldier.png')
+
   return {
     soldier: soldierTexture,
+    soldierImage: soldierImage,
   }
 }
+
+// const getOrCreateOutlineFilter = (
+//   pixiReferences: PixiReferences,
+//   id: string
+// ) => {
+//   const existing = pixiReferences.player.get(id)
+//   if (existing) {
+//     return existing
+//   }
+//   return createOutlineFilter(pixiReferences, id)
+// }
+//
+// const createOutlineFilter = (
+//   pixiReferences: PixiReferences,
+//   id: string
+// ): OutlineFilter => {
+//   const filter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
+//   pixiReferences.outlineFilters.set(id, filter)
+//   return filter
+// }
+
 const createPlayer = (
   appContainer: Container,
   gameState: GameState,
@@ -91,6 +129,7 @@ const createPlayer = (
   pixiReferences.player.set(id, result)
   return result
 }
+
 // Get or create graphics for a player
 const getOrCreatePlayer = (
   appContainer: Container,
@@ -139,6 +178,7 @@ const createUnit = (
   pixiReferences.units.set(id, result)
   return result
 }
+
 const createSoldier = (
   appContainer: Container,
   gameState: GameState,
@@ -152,14 +192,29 @@ const createSoldier = (
 
   const container = new Container()
 
-  const sprite = new Sprite(pixiReferences.textures.soldier)
+  const sprite = new Sprite(pixiReferences.textures.soldierImage)
   sprite.anchor.set(0.5)
   sprite.tint = player ? player.color : 'gray'
-  sprite.scale =
-    staticWorldConfig.soldier.radius /
-    (pixiReferences.textures.soldier.width / 2)
+
+  const texture = pixiReferences.textures.soldierImage
+  const imageWidth = texture.source.width
+  const imageHeight = texture.source.height
+  const targetSize = staticWorldConfig.soldier.radius * 2
+  const scale = targetSize / Math.max(imageWidth, imageHeight)
+  sprite.scale.set(scale, scale)
+
+  const weapon = new Graphics()
+  weapon
+    .rect(
+      staticWorldConfig.soldier.radius,
+      -staticWorldConfig.soldier.weapon.width / 2,
+      staticWorldConfig.soldier.weapon.length,
+      staticWorldConfig.soldier.weapon.width
+    )
+    .fill(0xaaaaaa)
 
   container.addChild(sprite)
+  container.addChild(weapon)
   appContainer.addChild(container)
 
   container.interactive = true
@@ -167,8 +222,12 @@ const createSoldier = (
     onClick({ unitId, event: e })
   })
 
-  const result = { container: container, sprite: sprite }
-  pixiReferences.player.set(id, result)
+  const result = {
+    container: container,
+    sprite: sprite,
+    weapon: weapon,
+  }
+  pixiReferences.soldier.set(id, result)
   return result
 }
 const getOrCreateSoldier = (
@@ -249,20 +308,16 @@ export const syncToPixi = (
 
     // Apply highlight filter if this soldier belongs to the selected unit
     if (selectedUnitId !== undefined && soldier.unitId === selectedUnitId) {
-      if (!ref.sprite.filters) {
-        const outlineFilter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
-        ref.sprite.filters = [outlineFilter]
-      }
+      ref.sprite.filters = [outlineFilter]
     } else {
-      // console.log('removing')
-      ref.sprite.filters = null
+      ref.sprite.filters = [weakOutlineFilter]
     }
   })
 
   // Remove graphics for soldiers that are no longer present or whose owner left
   pixiReferences.soldier.forEach((ref, soldierId) => {
     const soldier = state.soldiers[soldierId]
-    if (!soldier || !(soldier.unitId in state.players)) {
+    if (!soldier || !(soldier.unitId in state.units)) {
       appContainer.removeChild(ref.container)
       pixiReferences.soldier.delete(soldierId)
     }
