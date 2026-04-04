@@ -13,9 +13,19 @@ import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
 import { applyInput, createWorldReferences, simulate } from './simulation'
 import { normalized, origo } from './math/Vector2.ts'
-import { createGamePixiReferences, syncToPixi } from './graphics.ts'
+import {
+  createGamePixiReferences,
+  syncToPixi,
+  type UnitClickEvent,
+} from './graphics.ts'
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected'
+
+const MouseButton = {
+  left: 0,
+  middle: 1,
+  right: 2,
+} as const
 
 interface GameProps {
   mode: 'host' | 'client'
@@ -39,7 +49,9 @@ const initializeGame = async (
     canvas: canvas,
     width: 1200,
     height: 600,
-    backgroundColor: 0x1a1a1a,
+    backgroundColor: 0x103010,
+    resolution: window.devicePixelRatio || 2,
+    autoDensity: true,
   })
 
   // Prevent the browser context menu on right-click over the canvas
@@ -49,8 +61,8 @@ const initializeGame = async (
 
   const rootContainer = new Container()
   const screenDimensions = {
-    width: app.canvas.width,
-    height: app.canvas.height,
+    width: app.screen.width,
+    height: app.screen.height,
   }
   rootContainer.scale.y = -1
   rootContainer.position.y = screenDimensions.height
@@ -190,13 +202,11 @@ const initializeGame = async (
     }
   }
 
-  // const handleUpdateInput = (
-  //   update: (nextInput: PlayerInput) => PlayerInput
-  // ) => {
-  //   playerInput = update(playerInput)
-  // }
-  const handleClick = (unitId: string) => {
-    playerInput.selectedUnitId = unitId
+  const handlePlayerClick = (event: UnitClickEvent) => {
+    if (event.event.button === MouseButton.left) {
+      // only select on primary key click
+      playerInput.selectedUnitId = event.unitId
+    }
   }
   app.ticker.add(() => {
     // Process own input.
@@ -217,7 +227,7 @@ const initializeGame = async (
       currentState,
       selfId,
       screenDimensions,
-      handleClick,
+      handlePlayerClick,
       playerInput
     )
   })
@@ -255,7 +265,12 @@ export function Game({ mode, roomId, onBackToMenu }: GameProps) {
   }, [mode, roomId])
 
   return (
-    <div>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <div
         style={{
           marginBottom: '10px',
