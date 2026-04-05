@@ -1,9 +1,9 @@
-import type { GameState } from './Game.tsx'
+import type { Unit } from './Game.tsx'
 import { add, scale, sub, vector } from './math/Vector2.ts'
 import { staticWorldConfig } from './simulation.tsx'
 import { zeros } from './math/linear-algebra.ts'
 
-export const calculateFormationSlots = (unit: GameState['units'][string]) => {
+export const calculateFormationSlots = (unit: Unit) => {
   const { formationWidth, soldierCount } = unit
   const formationDepth = Math.ceil(formationWidth / formationWidth)
   const formationDimN = vector(formationWidth, formationDepth)
