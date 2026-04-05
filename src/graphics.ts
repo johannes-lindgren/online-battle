@@ -1,17 +1,18 @@
 import {
+  Assets,
   Container,
+  type FederatedPointerEvent,
   Graphics,
   type Renderer,
   Sprite,
   Texture,
-  type FederatedPointerEvent,
-  Assets,
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.tsx'
-import { add, fromAngle, scale, sub, vector } from './math/Vector2.ts'
+import { fromAngle, scale } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 import { zeros } from './math/linear-algebra.ts'
+import { calculateFormationSlots } from './calculateFormationSlots.ts'
 
 const outlineFilter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
 const weakOutlineFilter = new OutlineFilter(1, 0xffffff, 0.1, 0.2)
@@ -290,28 +291,6 @@ const getOrCreateSoldier = (
     unitId,
     onClick
   )
-}
-
-const calculateFormationSlots = (unit: GameState['units'][string]) => {
-  const { formationWidth, soldierCount } = unit
-  const formationDepth = Math.ceil(formationWidth / formationWidth)
-  const formationDimN = vector(formationWidth, formationDepth)
-  const soldierDist = staticWorldConfig.soldier.radius * 0.5
-  return zeros(soldierCount).map((_, i) => {
-    const xn = i % formationWidth
-    const yn = Math.floor(i / formationWidth)
-    const relPos = sub(
-      scale(
-        vector(xn, yn),
-        staticWorldConfig.soldier.radius * 2 + soldierDist
-      ),
-      scale(
-        formationDimN,
-        0.5 * ((staticWorldConfig.soldier.radius + soldierDist) * 2)
-      )
-    )
-    return add(unit.position, relPos)
-  })
 }
 
 // Render function - updates Pixi graphics from current state
