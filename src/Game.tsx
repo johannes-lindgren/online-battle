@@ -11,7 +11,7 @@ export type PlayerInstruction = {
 }
 
 export type Unit = {
-  position: Vector2
+  targetPos: Vector2
   playerId: string
   soldierCount: number
   formationWidth: number
@@ -80,7 +80,7 @@ const createUnit = (
     .map((pos) => add(pos, position))
 
   const unit: Unit = {
-    position,
+    targetPos: position,
     playerId: playerId,
     // TODO
     soldierCount: 30,
@@ -102,13 +102,15 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
 
   // The new player
   const playerIndex = Object.keys(state.players).length
-  const playerSpawnPos = vector(0, playerIndex * 300)
+  const armySpawnPos = vector(0, playerIndex * 300)
+  const generalOffset = 100
+  const playerSpawnPos = vector(0, playerIndex * 300 - generalOffset)
   const player = {
     position: playerSpawnPos,
     color: pseudoRandomColor(playerId),
   }
 
-  createArmy(state, playerId, playerSpawnPos)
+  createArmy(state, playerId, armySpawnPos)
 
   state.players[playerId] = player
 }

@@ -200,6 +200,7 @@ const createUnit = (
     const s = new Sprite(pixiReferences.textures.soldier)
     s.anchor.set(0.5)
     s.tint = player ? player.color : 'gray'
+    s.alpha = 0.3 // Semi-transparent slots
     return s
   })
 
@@ -293,6 +294,33 @@ const getOrCreateSoldier = (
   )
 }
 
+const computeUnitAveragePositions = (state: GameState) => {
+  const unitPositions = new Map<string, { x: number; y: number }>()
+  const unitCounts = new Map<string, number>()
+
+  Object.values(state.soldiers).forEach((soldier) => {
+    const currentSum = unitPositions.get(soldier.unitId) ?? { x: 0, y: 0 }
+    const currentCount = unitCounts.get(soldier.unitId) ?? 0
+
+    unitPositions.set(soldier.unitId, {
+      x: currentSum.x + soldier.position.x,
+      y: currentSum.y + soldier.position.y,
+    })
+    unitCounts.set(soldier.unitId, currentCount + 1)
+  })
+
+  const averages = new Map<string, { x: number; y: number }>()
+  unitPositions.forEach((sum, unitId) => {
+    const count = unitCounts.get(unitId) ?? 1
+    averages.set(unitId, {
+      x: sum.x / count,
+      y: sum.y / count,
+    })
+  })
+
+  return averages
+}
+
 // Render function - updates Pixi graphics from current state
 export const syncToPixi = (
   appContainer: Container,
@@ -312,6 +340,9 @@ export const syncToPixi = (
     appContainer.position.set(targetX, targetY)
   }
 
+  // Compute unit average positions
+  const unitAveragePositions = computeUnitAveragePositions(state)
+
   // Add or update player graphics
   Object.entries(state.players).forEach(([id, player]) => {
     const ref = getOrCreatePlayer(appContainer, state, pixiReferences, id)
@@ -323,7 +354,9 @@ export const syncToPixi = (
   Object.entries(state.units).forEach(([id, unit]) => {
     const ref = getOrCreateUnit(appContainer, state, pixiReferences, id)
 
-    const slotsPositions = calculateFormationSlots(unit)
+    ref.container.position.set(unit.targetPos.x, unit.targetPos.y)
+    const avgPosition = unitAveragePositions.get(id) ?? unit.targetPos
+    const slotsPositions = calculateFormationSlots(unit, avgPosition)
 
     ref.slotsSprites.forEach((sprite, index) => {
       const pos = slotsPositions[index]

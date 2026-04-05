@@ -13,6 +13,7 @@ import {
   sub,
   type Vector2,
 } from './math/Vector2'
+import { calculateFormationSlots } from './calculateFormationSlots.ts'
 
 const natureConst = {
   g: 9.82,
@@ -31,13 +32,13 @@ export const staticWorldConfig = {
     },
     stoppingDistance: 100,
     mass: 70,
-    linearDamping: 0.5,
+    linearDamping: 1,
     angularDamping: 5,
     friction: 0.2,
     restitution: 0.0,
     // The force is proportional to the mass of the player
-    walkForcePerKg: 1.3 * natureConst.g,
-    runForcePerKg: 2.5 * natureConst.g,
+    walkForcePerKg: 3 * natureConst.g,
+    runForcePerKg: 10 * natureConst.g,
     torquePerKg: 0.1,
   },
   player: {
@@ -162,7 +163,7 @@ export const applyInput = (
       if (!unit) {
         return
       }
-      unit.position = instruction.position
+      unit.targetPos = instruction.position
     }
   })
 }
@@ -172,13 +173,13 @@ export const applyInput = (
  * @param world
  * @param state
  * @param worldReferences
- * @param unitAveragePositions
+ * @param soldierSlotAssignments
  */
 export const syncToWorld = (
   world: RAPIER.World,
   state: GameState,
   worldReferences: WorldReferences,
-  unitAveragePositions: Map<string, Vector2>
+  soldierSlotAssignments: Map<string, Vector2>
 ) => {
   // First loop: Create rigid bodies for new players
   Object.entries(state.players).forEach(([playerId, player]) => {
@@ -207,9 +208,9 @@ export const syncToWorld = (
     rigidBody.resetForces(true)
     rigidBody.resetTorques(true)
 
-    const unitAvgPos =
-      unitAveragePositions.get(soldier.unitId) ?? soldier.position
-    updateSoldier(state, soldierId, soldier, rigidBody, world, unitAvgPos)
+    const assignedSlot =
+      soldierSlotAssignments.get(soldierId) ?? soldier.position
+    updateSoldier(state, soldierId, soldier, rigidBody, world, assignedSlot)
   })
 
   // Third loop: Remove rigid bodies for disconnected players
@@ -343,99 +344,151 @@ const computeUnitAveragePositions = (
   return averages
 }
 
+/**
+ * Precompute formation slots for each unit.
+ * Formation slots are positioned between the unit's average position and target position.
+ * @param state
+ * @param unitAveragePositions
+ */
+const computeUnitFormationSlots = (
+  state: GameState,
+  unitAveragePositions: Map<string, Vector2>
+): Map<string, Vector2[]> => {
+  const unitSlots = new Map<string, Vector2[]>()
+
+  Object.entries(state.units).forEach(([unitId, unit]) => {
+    const avgPosition = unitAveragePositions.get(unitId) ?? unit.targetPos
+
+    // Move the formation center towards the target
+    const toTarget = sub(unit.targetPos, avgPosition)
+    const distanceToTarget = length(toTarget)
+
+    // Position the formation slots between average position and target
+    // When far from target, shift formation center towards target
+    const maxShift = 50 // How far ahead of average position to place formation
+    const shiftAmount = Math.min(distanceToTarget, maxShift)
+    const shiftDirection = normalized(toTarget) ?? origo
+    const formationCenter = add(avgPosition, scale(shiftDirection, shiftAmount))
+
+    const formationSlots = calculateFormationSlots(unit, formationCenter)
+    unitSlots.set(unitId, formationSlots)
+  })
+
+  return unitSlots
+}
+
+/**
+ * Assign each soldier to a unique formation slot.
+ * Uses worst-first assignment: soldiers furthest from formation choose their slot first.
+ * This allows stragglers to claim their nearest slots while soldiers already in position can adapt.
+ * @param state
+ * @param unitFormationSlots
+ */
+const assignSoldiersToSlots = (
+  state: GameState,
+  unitFormationSlots: Map<string, Vector2[]>
+): Map<string, Vector2> => {
+  const assignments = new Map<string, Vector2>()
+
+  Object.entries(state.units).forEach(([unitId, unit]) => {
+    const formationSlots = unitFormationSlots.get(unitId)
+    if (!formationSlots) return
+
+    const unitSoldiers = Object.entries(state.soldiers)
+      .filter(([, soldier]) => soldier.unitId === unitId)
+      .map(([id, soldier]) => ({ id, position: soldier.position }))
+
+    // Calculate each soldier's distance to their nearest slot
+    const soldiersWithMinDistance = unitSoldiers.map(({ id, position }) => {
+      let minDistanceSquared = Infinity
+      formationSlots.forEach((slot) => {
+        const distSquared = lengthSquared(sub(slot, position))
+        if (distSquared < minDistanceSquared) {
+          minDistanceSquared = distSquared
+        }
+      })
+      return { id, position, minDistanceSquared }
+    })
+
+    // Sort soldiers by distance: furthest from formation first
+    soldiersWithMinDistance.sort((a, b) => b.minDistanceSquared - a.minDistanceSquared)
+
+    const availableSlots = [...formationSlots]
+
+    // Assign in order: furthest soldiers choose first
+    soldiersWithMinDistance.forEach(({ id, position }) => {
+      if (availableSlots.length === 0) {
+        assignments.set(id, unit.targetPos)
+        return
+      }
+
+      // Find nearest available slot for this soldier
+      let bestSlotIndex = -1
+      let bestDistanceSquared = Infinity
+
+      availableSlots.forEach((slot, slotIndex) => {
+        const distSquared = lengthSquared(sub(slot, position))
+        if (distSquared < bestDistanceSquared) {
+          bestDistanceSquared = distSquared
+          bestSlotIndex = slotIndex
+        }
+      })
+
+      if (bestSlotIndex >= 0) {
+        const assignedSlot = availableSlots[bestSlotIndex]
+        if (assignedSlot) {
+          assignments.set(id, assignedSlot)
+          availableSlots.splice(bestSlotIndex, 1)
+        }
+      } else {
+        assignments.set(id, unit.targetPos)
+      }
+    })
+  })
+
+  return assignments
+}
+
 /*
  * Soldier AI with flocking behavior (alignment and cohesion)
  */
 const updateSoldier = (
   state: GameState,
-  _soldierId: string,
+  soldierId: string,
   soldier: Soldier,
   rigidBody: RAPIER.RigidBody,
   world: RAPIER.World,
-  unitAveragePosition: Vector2
+  assignedSlot: Vector2
 ) => {
   const unit = state.units[soldier.unitId]
   if (!unit) {
     return
   }
 
+  // Calculate repulsive force from nearby neighbors
   const { direction: avoidanceDirection, distanceSquared: closestDistance } =
     findClosestNeighbor(world, soldier.position, rigidBody, avoidanceShape)
 
-  const { neighborCount, averageVelocity, averagePosition } =
-    gatherFlockingNeighbors(
-      world,
-      soldier.position,
-      rigidBody,
-      alignmentShape,
-      alignmentRadius * alignmentRadius
-    )
+  // Move towards assigned slot (already uniquely assigned in assignSoldiersToSlots)
+  const toAssignedSlot = sub(assignedSlot, soldier.position)
+  const directionToSlot = normalized(toAssignedSlot) ?? origo
 
-  const alignmentDirection =
-    neighborCount > 0
-      ? (normalized(scale(averageVelocity, 1 / neighborCount)) ?? origo)
-      : origo
-
-  const cohesionDirection =
-    neighborCount > 0
-      ? (normalized(
-          sub(scale(averagePosition, 1 / neighborCount), soldier.position)
-        ) ?? origo)
-      : origo
-
-  // Direction to unit goal
-  const toUnitPos = sub(unit.position, soldier.position)
-  const directionToUnitPos = normalized(toUnitPos) ?? origo
-
-  // Check if unit average position is close to unit.position
-  const toUnitFromAverage = sub(unit.position, unitAveragePosition)
-  const distanceUnitAverageToTarget = length(toUnitFromAverage)
-
-  // Stop moving if unit average is close enough to the target
-  if (distanceUnitAverageToTarget < 10) {
-    const currentVelocity = rigidBody.linvel()
-    const breakingForce = scale(currentVelocity, -rigidBody.mass() * 2)
-    rigidBody.addForce(breakingForce, true)
-    return
-  }
-
-  const directionToTarget = directionToUnitPos
-
-  // Combine behaviors with weights
+  // Combine formation movement with neighbor avoidance
   const avoidanceWeight = Math.max(1 - closestDistance / avoidanceDist, 0)
-  const alignmentWeight = neighborCount > 0 ? 0.4 : 0
-  const cohesionWeight = neighborCount > 0 ? 0.2 : 0
-  const targetWeight = 1 - avoidanceWeight
+  const formationWeight = 1 - avoidanceWeight * 0.5 // Reduce formation weight when avoiding
 
   const finalDirection =
     normalized(
       add(
-        scale(directionToTarget, targetWeight),
-        scale(avoidanceDirection, avoidanceWeight),
-        scale(alignmentDirection, alignmentWeight),
-        scale(cohesionDirection, cohesionWeight)
+        scale(directionToSlot, formationWeight),
+        scale(avoidanceDirection, avoidanceWeight)
       )
-    ) ?? directionToTarget
-
-  // TODO adjust the walk speed based on the players direction:
-  //  - units walk slower sideways and backwards
+    ) ?? directionToSlot
 
   const forceMagnitude =
     staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
   const force = scale(finalDirection, forceMagnitude)
   rigidBody.addForce(force, true)
-
-  // Rotate soldier to face the alignment direction when in formation, otherwise face target
-  const rotationTarget =
-    neighborCount > 2 ? alignmentDirection : directionToTarget
-  const movementDirection = normalized(rigidBody.linvel())
-  if (movementDirection) {
-    torqueTowards(
-      rigidBody,
-      rotationTarget,
-      staticWorldConfig.soldier.torquePerKg * rigidBody.mass() * 1000
-    )
-  }
 }
 
 export const syncFromWorld = (
@@ -499,7 +552,15 @@ export const simulate = (
   worldReferences: WorldReferences
 ) => {
   const unitAveragePositions = computeUnitAveragePositions(currentState)
-  syncToWorld(world, currentState, worldReferences, unitAveragePositions)
+  const unitFormationSlots = computeUnitFormationSlots(
+    currentState,
+    unitAveragePositions
+  )
+  const soldierSlotAssignments = assignSoldiersToSlots(
+    currentState,
+    unitFormationSlots
+  )
+  syncToWorld(world, currentState, worldReferences, soldierSlotAssignments)
   world.step()
   return syncFromWorld(world, worldReferences, currentState)
 }
