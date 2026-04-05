@@ -9,8 +9,9 @@ import {
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.tsx'
-import { fromAngle, scale } from './math/Vector2.ts'
+import { add, fromAngle, scale, sub, vector } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
+import { zeros } from './math/linear-algebra.ts'
 
 const outlineFilter = new OutlineFilter(2, 0xffffff, 0.5, 0.4)
 const weakOutlineFilter = new OutlineFilter(1, 0xffffff, 0.1, 0.2)
@@ -20,10 +21,25 @@ export type UnitClickEvent = {
   event: FederatedPointerEvent
 }
 
-type PixiUnitRef = {
+type PixiPlayerRef = {
   container: Container
+  // The target position
   sprite: Sprite
   weapon?: Graphics
+}
+
+type PixiSoldierRef = {
+  container: Container
+  // The target position
+  sprite: Sprite
+  weapon?: Graphics
+}
+
+type PixiUnitRef = {
+  container: Container
+  // The target position
+  sprite: Sprite
+  slotsSprites: Sprite[]
 }
 
 type PixiTextures = {
@@ -32,8 +48,8 @@ type PixiTextures = {
 }
 
 type PixiReferences = {
-  player: Map<string, PixiUnitRef>
-  soldier: Map<string, PixiUnitRef>
+  player: Map<string, PixiPlayerRef>
+  soldier: Map<string, PixiSoldierRef>
   units: Map<string, PixiUnitRef>
   outlineFilters: Map<string, OutlineFilter>
   textures: PixiTextures
@@ -107,7 +123,7 @@ const createPlayer = (
   gameState: GameState,
   pixiReferences: PixiReferences,
   id: string
-): PixiUnitRef => {
+): PixiPlayerRef => {
   const player = gameState.players[id]
 
   // Create a container to hold both the circle and text
@@ -125,7 +141,10 @@ const createPlayer = (
   container.addChild(sprite)
   appContainer.addChild(container)
 
-  const result = { container: container, sprite: sprite }
+  const result = {
+    container: container,
+    sprite: sprite,
+  }
   pixiReferences.player.set(id, result)
   return result
 }
@@ -143,6 +162,7 @@ const getOrCreatePlayer = (
   }
   return createPlayer(appContainer, gameState, pixiReferences, id)
 }
+
 const getOrCreateUnit = (
   appContainer: Container,
   gameState: GameState,
@@ -155,6 +175,7 @@ const getOrCreateUnit = (
   }
   return createUnit(appContainer, gameState, pixiReferences, id)
 }
+
 const createUnit = (
   appContainer: Container,
   gameState: GameState,
@@ -174,8 +195,25 @@ const createUnit = (
   container.addChild(sprite)
   appContainer.addChild(container)
 
-  const result = { container: container, sprite: sprite }
+  const slotsSprites = zeros(unit?.soldierCount ?? 0).map(() => {
+    const s = new Sprite(pixiReferences.textures.soldier)
+    s.anchor.set(0.5)
+    s.tint = player ? player.color : 'gray'
+    return s
+  })
+
+  // Add all slot
+  slotsSprites.forEach((sprite) => {
+    appContainer.addChild(sprite)
+  })
+
+  const result = {
+    container: container,
+    sprite: sprite,
+    slotsSprites: slotsSprites,
+  }
   pixiReferences.units.set(id, result)
+
   return result
 }
 
@@ -186,7 +224,7 @@ const createSoldier = (
   id: string,
   unitId: string,
   onClick: (event: UnitClickEvent) => void
-): PixiUnitRef => {
+): PixiSoldierRef => {
   const unit = gameState.units[unitId]
   const player = unit ? gameState.players[unit.playerId] : undefined
 
@@ -230,6 +268,7 @@ const createSoldier = (
   pixiReferences.soldier.set(id, result)
   return result
 }
+
 const getOrCreateSoldier = (
   appContainer: Container,
   gameState: GameState,
@@ -242,6 +281,7 @@ const getOrCreateSoldier = (
   if (existing) {
     return existing
   }
+
   return createSoldier(
     appContainer,
     gameState,
@@ -250,6 +290,28 @@ const getOrCreateSoldier = (
     unitId,
     onClick
   )
+}
+
+const calculateFormationSlots = (unit: GameState['units'][string]) => {
+  const { formationWidth, soldierCount } = unit
+  const formationDepth = Math.ceil(formationWidth / formationWidth)
+  const formationDimN = vector(formationWidth, formationDepth)
+  const soldierDist = staticWorldConfig.soldier.radius * 0.5
+  return zeros(soldierCount).map((_, i) => {
+    const xn = i % formationWidth
+    const yn = Math.floor(i / formationWidth)
+    const relPos = sub(
+      scale(
+        vector(xn, yn),
+        staticWorldConfig.soldier.radius * 2 + soldierDist
+      ),
+      scale(
+        formationDimN,
+        0.5 * ((staticWorldConfig.soldier.radius + soldierDist) * 2)
+      )
+    )
+    return add(unit.position, relPos)
+  })
 }
 
 // Render function - updates Pixi graphics from current state
@@ -270,6 +332,7 @@ export const syncToPixi = (
     const targetY = screenDimensions.height / 2 - ownPlayer.position.y
     appContainer.position.set(targetX, targetY)
   }
+
   // Add or update player graphics
   Object.entries(state.players).forEach(([id, player]) => {
     const ref = getOrCreatePlayer(appContainer, state, pixiReferences, id)
@@ -281,7 +344,14 @@ export const syncToPixi = (
   Object.entries(state.units).forEach(([id, unit]) => {
     const ref = getOrCreateUnit(appContainer, state, pixiReferences, id)
 
-    ref.container.position.set(unit.position.x, unit.position.y)
+    const slotsPositions = calculateFormationSlots(unit)
+
+    ref.slotsSprites.forEach((sprite, index) => {
+      const pos = slotsPositions[index]
+      if (pos) {
+        sprite.position.set(pos.x, pos.y)
+      }
+    })
   })
 
   // Remove graphics for players that have left

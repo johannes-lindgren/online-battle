@@ -13,6 +13,8 @@ export type PlayerInstruction = {
 export type Unit = {
   position: Vector2
   playerId: string
+  soldierCount: number
+  formationWidth: number
 }
 
 export type Soldier = {
@@ -77,7 +79,14 @@ const createUnit = (
     // Translate to the unit position
     .map((pos) => add(pos, position))
 
-  const unit: Unit = { position, playerId: playerId }
+  const unit: Unit = {
+    position,
+    playerId: playerId,
+    // TODO
+    soldierCount: 30,
+    // TODO
+    formationWidth: 10,
+  }
   const unitId = uuid()
   state.units[unitId] = unit
 
