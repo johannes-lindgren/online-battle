@@ -421,7 +421,7 @@ const updateSoldier = (
 
   const unitAveragePosition = unitAveragePositions.get(soldier.unitId)!
 
-  const slotAbsPos = add(unitAveragePosition, assignedSlot)
+  const slotAbsPos = add(origo, assignedSlot)
   const targetPos = slotAbsPos
 
   // Move towards assigned slot (already uniquely assigned in assignSoldiersToSlots)
@@ -522,7 +522,6 @@ export const simulate = (
   })
 
   const unitAveragePositions = computeUnitAveragePositions(currentState)
-
   syncToWorld(
     world,
     currentState,
