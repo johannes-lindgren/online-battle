@@ -1,5 +1,5 @@
 import type { Unit } from './Game.tsx'
-import { add, scale, sub, vector, type Vector2 } from './math/Vector2.ts'
+import { add, scale, vector, type Vector2 } from './math/Vector2.ts'
 import { staticWorldConfig } from './simulation.ts'
 import { zeros } from './math/linear-algebra.ts'
 

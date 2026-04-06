@@ -421,8 +421,9 @@ const updateSoldier = (
 
   const unitAveragePosition = unitAveragePositions.get(soldier.unitId)!
 
-  const slotAbsPos = add(origo, assignedSlot)
-  const targetPos = slotAbsPos
+  const currentSlotAbsPos = add(unitAveragePosition, assignedSlot)
+  const finalSlotAbsPos = add(unit.targetPos, assignedSlot)
+  const targetPos = finalSlotAbsPos
 
   // Move towards assigned slot (already uniquely assigned in assignSoldiersToSlots)
   const directionToSlot = normalize(sub(targetPos, soldier.position))
