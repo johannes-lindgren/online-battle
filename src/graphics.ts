@@ -8,7 +8,7 @@ import {
   Texture,
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
-import { staticWorldConfig } from './simulation.tsx'
+import { staticWorldConfig } from './simulation.ts'
 import { fromAngle, scale } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 import { zeros } from './math/linear-algebra.ts'

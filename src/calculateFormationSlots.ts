@@ -1,6 +1,6 @@
 import type { Unit } from './Game.tsx'
 import { add, scale, sub, vector, type Vector2 } from './math/Vector2.ts'
-import { staticWorldConfig } from './simulation.tsx'
+import { staticWorldConfig } from './simulation.ts'
 import { zeros } from './math/linear-algebra.ts'
 
 export const calculateFormationSlots = (unit: Unit, position: Vector2) => {

@@ -1,7 +1,7 @@
 import { type Vector2, vector, add, sub } from './math/Vector2.ts'
 import { v4 as uuid } from 'uuid'
 import { pseudoRandomColor } from './randomColor.ts'
-import { staticWorldConfig } from './simulation.tsx'
+import { staticWorldConfig } from './simulation.ts'
 import { zeros } from './math/linear-algebra.ts'
 
 export type PlayerInstruction = {
@@ -11,6 +11,7 @@ export type PlayerInstruction = {
 }
 
 export type Unit = {
+  id: string
   targetPos: Vector2
   playerId: string
   soldierCount: number
@@ -18,12 +19,14 @@ export type Unit = {
 }
 
 export type Soldier = {
+  id: string
   position: Vector2
   angle: number
   unitId: string
 }
 
 export type Player = {
+  id: string
   position: Vector2
   color: string
 }
@@ -79,7 +82,9 @@ const createUnit = (
     // Translate to the unit position
     .map((pos) => add(pos, position))
 
+  const unitId = uuid()
   const unit: Unit = {
+    id: unitId,
     targetPos: position,
     playerId: playerId,
     // TODO
@@ -87,7 +92,6 @@ const createUnit = (
     // TODO
     formationWidth: 10,
   }
-  const unitId = uuid()
   state.units[unitId] = unit
 
   soliderPositions.forEach((pos) => {
@@ -106,6 +110,7 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
   const generalOffset = 100
   const playerSpawnPos = vector(0, playerIndex * 300 - generalOffset)
   const player = {
+    id: playerId,
     position: playerSpawnPos,
     color: pseudoRandomColor(playerId),
   }
@@ -116,7 +121,7 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
 }
 
 const createArmy = (state: GameState, playerId: string, position: Vector2) => {
-  const unitCount: number = 10
+  const unitCount: number = 1
   // Add unit
   const unitDistance = 150
   // Face up
@@ -134,9 +139,14 @@ const spawnSolider = (
   position: Vector2,
   angle: number
 ): void => {
-  const soldier: Soldier = { position, unitId, angle }
-
   const soldierId = uuid()
+  const soldier: Soldier = {
+    id: soldierId,
+    position,
+    unitId,
+    angle,
+  }
+
   state.soldiers[soldierId] = soldier
 }
 
