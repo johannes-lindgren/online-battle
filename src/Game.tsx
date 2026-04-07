@@ -15,6 +15,7 @@ export type Unit = {
   id: string
   targetPos: Vector2
   targetAngle: number
+  path: Vector2[]
   playerId: string
   soldierCount: number
   formationWidth: number
@@ -89,6 +90,7 @@ const createUnit = (
     id: unitId,
     targetPos: position,
     targetAngle: angle,
+    path: [],
     playerId: playerId,
     // TODO
     soldierCount: 30,

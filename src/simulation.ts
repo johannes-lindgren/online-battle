@@ -15,7 +15,7 @@ import {
   type Vector2,
 } from './math/Vector2'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
-import { smoothstep } from './math/linear-algebra'
+import { smoothstep, linspace } from './math/linear-algebra'
 
 const natureConst = {
   g: 9.82,
@@ -148,10 +148,54 @@ const getOrCreateSoldier = (
   return createSolider(world, worldReferences, soldierId)
 }
 
+const cubicBezier = (
+  p0: Vector2,
+  p1: Vector2,
+  p2: Vector2,
+  p3: Vector2,
+  t: number
+): Vector2 => {
+  const oneMinusT = 1 - t
+  const oneMinusT2 = oneMinusT * oneMinusT
+  const oneMinusT3 = oneMinusT2 * oneMinusT
+  const t2 = t * t
+  const t3 = t2 * t
+  return add(
+    add(scale(p0, oneMinusT3), scale(p1, 3 * oneMinusT2 * t)),
+    add(scale(p2, 3 * oneMinusT * t2), scale(p3, t3))
+  )
+}
+
+const computeUnitPath = (
+  startPos: Vector2,
+  startDir: Vector2,
+  targetPos: Vector2,
+  targetAngle: number
+): Vector2[] => {
+  const segmentCount = 20
+  const tValues = linspace(0, 1, segmentCount + 1)
+
+  const p0 = startPos
+  const p3 = targetPos
+  const endDir = fromAngle(targetAngle)
+
+  const dist = length(sub(p3, p0))
+  const controlDist = dist / 3
+
+  const p1 = add(p0, scale(startDir, controlDist))
+  const p2 = sub(p3, scale(endDir, controlDist))
+
+  return tValues.map((t) => cubicBezier(p0, p1, p2, p3, t))
+}
+
 export const applyInput = (
   state: GameState,
   playerId: string,
-  input: PlayerInput
+  input: PlayerInput,
+  unitAverages: {
+    positions: Map<string, Vector2>
+    directions: Map<string, Vector2>
+  }
 ) => {
   // Store the latest input for the player
   state.inputs[playerId] = input
@@ -164,8 +208,21 @@ export const applyInput = (
       if (!unit) {
         return
       }
+
+      const startPos =
+        unitAverages.positions.get(instruction.unitId) ?? unit.targetPos
+      const startDir =
+        unitAverages.directions.get(instruction.unitId) ??
+        fromAngle(unit.targetAngle)
+
       unit.targetPos = instruction.position
       unit.targetAngle = instruction.angle
+      unit.path = computeUnitPath(
+        startPos,
+        startDir,
+        instruction.position,
+        instruction.angle
+      )
     }
   })
 }
@@ -431,7 +488,8 @@ const updateSoldier = (
   const unitAveragePosition = unitPositions.get(soldier.unitId)!
 
   const currentSlotAbsPos = add(unitAveragePosition, assignedSlot)
-  const finalSlotAbsPos = add(unit.targetPos, assignedSlot)
+  const pathStart = unit.path[0] ?? unit.targetPos
+  const finalSlotAbsPos = add(pathStart, assignedSlot)
 
   const distToCurrentSlot = length(sub(currentSlotAbsPos, soldier.position))
   const catchUpThreshold = staticWorldConfig.soldier.radius * 2
@@ -535,6 +593,18 @@ export const simulate = (
   }
 ) => {
   const unitId2Soldiers = getUnitIdToSoldiers(currentState)
+
+  // Advance unit paths when the average position reaches the first waypoint
+  const waypointThreshold = staticWorldConfig.soldier.radius * 2
+  Object.entries(currentState.units).forEach(([unitId, unit]) => {
+    if (unit.path.length === 0) return
+    const avgPos = unitAverages.positions.get(unitId)
+    if (!avgPos) return
+    const distToWaypoint = length(sub(unit.path[0]!, avgPos))
+    if (distToWaypoint < waypointThreshold) {
+      unit.path.shift()
+    }
+  })
 
   const soldierSlotAssignments: Map<string, Vector2> = new Map()
   Object.entries(currentState.units).forEach(([unitId, unit]) => {

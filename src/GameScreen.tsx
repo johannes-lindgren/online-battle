@@ -20,66 +20,21 @@ import {
 import {
   normalized,
   origo,
-  add,
-  scale,
   sub,
-  type Vector2,
-  fromAngle,
-  length,
-  angle,
   normalize,
+  angle,
+  type Vector2,
 } from './math/Vector2.ts'
-import { linspace } from './math/linear-algebra.ts'
 import {
   createGamePixiReferences,
   syncToPixi,
   type UnitClickEvent,
 } from './graphics.ts'
 
-const cubicBezier = (
-  p0: Vector2,
-  p1: Vector2,
-  p2: Vector2,
-  p3: Vector2,
-  t: number
-): Vector2 => {
-  const oneMinusT = 1 - t
-  const oneMinusT2 = oneMinusT * oneMinusT
-  const oneMinusT3 = oneMinusT2 * oneMinusT
-  const t2 = t * t
-  const t3 = t2 * t
-  return add(
-    add(scale(p0, oneMinusT3), scale(p1, 3 * oneMinusT2 * t)),
-    add(scale(p2, 3 * oneMinusT * t2), scale(p3, t3))
-  )
-}
-
-const computeUnitPaths = (
-  state: GameState,
-  unitAverages: {
-    positions: Map<string, Vector2>
-    directions: Map<string, Vector2>
-  }
-): Map<string, Vector2[]> => {
+const getUnitPaths = (state: GameState): Map<string, Vector2[]> => {
   const paths = new Map<string, Vector2[]>()
-  const segmentCount = 20
-  const tValues = linspace(0, 1, segmentCount + 1)
-
   Object.entries(state.units).forEach(([id, unit]) => {
-    const p0 = unitAverages.positions.get(id) ?? unit.targetPos
-    const p3 = unit.targetPos
-    const startDir =
-      unitAverages.directions.get(id) ?? fromAngle(unit.targetAngle)
-    const endDir = fromAngle(unit.targetAngle)
-
-    const dist = length(sub(p3, p0))
-    const controlDist = dist / 3
-
-    const p1 = add(p0, scale(startDir, controlDist))
-    const p2 = sub(p3, scale(endDir, controlDist))
-
-    const pathPoints = tValues.map((t) => cubicBezier(p0, p1, p2, p3, t))
-    paths.set(id, pathPoints)
+    paths.set(id, unit.path)
   })
 
   return paths
@@ -284,15 +239,16 @@ const initializeGame = async (
     }
   }
   app.ticker.add(() => {
+    const unitAverages = computeUnitAveragePositions(currentState)
+
     // Process own input.
     const ownInput = getOwnInput()
-    applyInput(currentState, selfId, ownInput)
+    applyInput(currentState, selfId, ownInput, unitAverages)
     sendInput(ownInput)
     keyTracker.drainEventQueue()
     playerInput.instructions = []
 
-    const unitAverages = computeUnitAveragePositions(currentState)
-    const unitPaths = computeUnitPaths(currentState, unitAverages)
+    const unitPaths = getUnitPaths(currentState)
     currentState = simulate(currentState, world, worldReferences, unitAverages)
     if (isHost) {
       sendState(currentState)
