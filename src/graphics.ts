@@ -9,7 +9,7 @@ import {
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.ts'
-import { fromAngle, scale, up, type Vector2 } from './math/Vector2.ts'
+import { fromAngle, scale, up, rotate, add, normalized, sub, angle, type Vector2 } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 import { zeros } from './math/linear-algebra.ts'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
@@ -345,14 +345,24 @@ export const syncToPixi = (
     const avgPosition = unitAverages.positions.get(id) ?? unit.targetPos
     const avgDirection = unitAverages.directions.get(id) ?? up
     ref.positionSprite.position.set(avgPosition.x, avgPosition.y)
-    const angle = Math.atan2(avgDirection.y, avgDirection.x)
-    ref.positionSprite.angle = toPixiAngle(angle)
-    const slotsPositions = calculateFormationSlots(unit, avgPosition)
+    const avgAngle = Math.atan2(avgDirection.y, avgDirection.x)
+    ref.positionSprite.angle = toPixiAngle(avgAngle)
 
+    // Calculate rotated slot positions at first path waypoint
+    const pathStart = unit.path[0] ?? unit.targetPos
+    const pathNext = unit.path[1] ?? unit.targetPos
+    const pathDirection = normalized(sub(pathNext, pathStart))
+    const formationDefaultAngle = Math.PI / 2
+    const pathAngle = pathDirection ? angle(pathDirection) : unit.targetAngle
+    const rotationAngle = pathAngle - formationDefaultAngle
+
+    const relativeSlots = calculateFormationSlots(unit, { x: 0, y: 0 })
     ref.slotsSprites.forEach((sprite, index) => {
-      const pos = slotsPositions[index]
-      if (pos) {
-        sprite.position.set(pos.x, pos.y)
+      const relSlot = relativeSlots[index]
+      if (relSlot) {
+        const rotatedSlot = rotate(relSlot, rotationAngle)
+        const absPos = add(pathStart, rotatedSlot)
+        sprite.position.set(absPos.x, absPos.y)
       }
     })
 

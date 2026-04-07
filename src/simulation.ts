@@ -3,13 +3,16 @@ import RAPIER from '@dimforge/rapier2d'
 import type { GameState, PlayerInput, Soldier } from './Game.tsx'
 import {
   add,
+  angle,
   cross,
+  dot,
   fromAngle,
   length,
   lengthSquared,
   normalize,
   normalized,
   origo,
+  rotate,
   scale,
   sub,
   type Vector2,
@@ -172,7 +175,7 @@ const computeUnitPath = (
   targetPos: Vector2,
   targetAngle: number
 ): Vector2[] => {
-  const segmentCount = 20
+  const segmentCount = 100
   const tValues = linspace(0, 1, segmentCount + 1)
 
   const p0 = startPos
@@ -487,9 +490,19 @@ const updateSoldier = (
 
   const unitAveragePosition = unitPositions.get(soldier.unitId)!
 
-  const currentSlotAbsPos = add(unitAveragePosition, assignedSlot)
+  // Get path direction for rotation
   const pathStart = unit.path[0] ?? unit.targetPos
-  const finalSlotAbsPos = add(pathStart, assignedSlot)
+  const pathNext = unit.path[1] ?? unit.targetPos
+  const pathDirection = normalized(sub(pathNext, pathStart))
+  // Formation is defined with Y as forward (facing up = 90 degrees)
+  // So we rotate by (pathAngle - 90 degrees) to align with path direction
+  const formationDefaultAngle = Math.PI / 2
+  const pathAngle = pathDirection ? angle(pathDirection) : unit.targetAngle
+  const rotationAngle = pathAngle - formationDefaultAngle
+  const rotatedSlot = rotate(assignedSlot, rotationAngle)
+
+  const currentSlotAbsPos = add(unitAveragePosition, rotatedSlot)
+  const finalSlotAbsPos = add(pathStart, rotatedSlot)
 
   const distToCurrentSlot = length(sub(currentSlotAbsPos, soldier.position))
   const catchUpThreshold = staticWorldConfig.soldier.radius * 2
