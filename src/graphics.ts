@@ -9,7 +9,7 @@ import {
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.ts'
-import { fromAngle, scale } from './math/Vector2.ts'
+import { fromAngle, scale, type Vector2 } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 import { zeros } from './math/linear-algebra.ts'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
@@ -40,6 +40,8 @@ type PixiUnitRef = {
   container: Container
   // The target position
   sprite: Sprite
+  // The current average position
+  positionSprite: Sprite
   slotsSprites: Sprite[]
 }
 
@@ -192,19 +194,22 @@ const createUnit = (
   sprite.anchor.set(0.5)
   sprite.tint = player ? player.color : 'gray'
 
-  // Add both to the container
+  const positionSprite = new Sprite(pixiReferences.textures.soldier)
+  positionSprite.anchor.set(0.5)
+  positionSprite.tint = player ? player.color : 'gray'
+
   container.addChild(sprite)
   appContainer.addChild(container)
+  appContainer.addChild(positionSprite)
 
   const slotsSprites = zeros(unit?.soldierCount ?? 0).map(() => {
     const s = new Sprite(pixiReferences.textures.soldier)
     s.anchor.set(0.5)
     s.tint = player ? player.color : 'gray'
-    s.alpha = 0.3 // Semi-transparent slots
+    s.alpha = 0.3
     return s
   })
 
-  // Add all slot
   slotsSprites.forEach((sprite) => {
     appContainer.addChild(sprite)
   })
@@ -212,6 +217,7 @@ const createUnit = (
   const result = {
     container: container,
     sprite: sprite,
+    positionSprite: positionSprite,
     slotsSprites: slotsSprites,
   }
   pixiReferences.units.set(id, result)
@@ -294,33 +300,6 @@ const getOrCreateSoldier = (
   )
 }
 
-const computeUnitAveragePositions = (state: GameState) => {
-  const unitPositions = new Map<string, { x: number; y: number }>()
-  const unitCounts = new Map<string, number>()
-
-  Object.values(state.soldiers).forEach((soldier) => {
-    const currentSum = unitPositions.get(soldier.unitId) ?? { x: 0, y: 0 }
-    const currentCount = unitCounts.get(soldier.unitId) ?? 0
-
-    unitPositions.set(soldier.unitId, {
-      x: currentSum.x + soldier.position.x,
-      y: currentSum.y + soldier.position.y,
-    })
-    unitCounts.set(soldier.unitId, currentCount + 1)
-  })
-
-  const averages = new Map<string, { x: number; y: number }>()
-  unitPositions.forEach((sum, unitId) => {
-    const count = unitCounts.get(unitId) ?? 1
-    averages.set(unitId, {
-      x: sum.x / count,
-      y: sum.y / count,
-    })
-  })
-
-  return averages
-}
-
 // Render function - updates Pixi graphics from current state
 export const syncToPixi = (
   appContainer: Container,
@@ -329,7 +308,8 @@ export const syncToPixi = (
   selfId: string,
   screenDimensions: { width: number; height: number },
   onClick: (event: UnitClickEvent) => void,
-  playerInput: PlayerInput
+  playerInput: PlayerInput,
+  unitAverages: { positions: Map<string, Vector2> }
 ) => {
   const { selectedUnitId } = playerInput
   // Update camera position to follow own player
@@ -339,9 +319,6 @@ export const syncToPixi = (
     const targetY = screenDimensions.height / 2 - ownPlayer.position.y
     appContainer.position.set(targetX, targetY)
   }
-
-  // Compute unit average positions
-  const unitAveragePositions = computeUnitAveragePositions(state)
 
   // Add or update player graphics
   Object.entries(state.players).forEach(([id, player]) => {
@@ -355,7 +332,8 @@ export const syncToPixi = (
     const ref = getOrCreateUnit(appContainer, state, pixiReferences, id)
 
     ref.container.position.set(unit.targetPos.x, unit.targetPos.y)
-    const avgPosition = unitAveragePositions.get(id) ?? unit.targetPos
+    const avgPosition = unitAverages.positions.get(id) ?? unit.targetPos
+    ref.positionSprite.position.set(avgPosition.x, avgPosition.y)
     const slotsPositions = calculateFormationSlots(unit, avgPosition)
 
     ref.slotsSprites.forEach((sprite, index) => {

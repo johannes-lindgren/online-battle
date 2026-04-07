@@ -12,7 +12,6 @@ import {
   origo,
   scale,
   sub,
-  up,
   type Vector2,
 } from './math/Vector2'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
@@ -182,7 +181,7 @@ export const syncToWorld = (
   state: GameState,
   worldReferences: WorldReferences,
   soldierSlotAssignments: Map<string, Vector2>,
-  unitAveragePositions: Map<string, Vector2>
+  unitPositions: Map<string, Vector2>
 ) => {
   // First loop: Create rigid bodies for new players
   Object.entries(state.players).forEach(([playerId, player]) => {
@@ -221,7 +220,7 @@ export const syncToWorld = (
       rigidBody,
       world,
       assignedSlot,
-      unitAveragePositions
+      unitPositions
     )
   })
 
@@ -333,28 +332,34 @@ const gatherFlockingNeighbors = (
   return { neighborCount, averageVelocity, averagePosition }
 }
 
-// TODO rewrite
-const computeUnitAveragePositions = (
+export const computeUnitAveragePositions = (
   state: GameState
-): Map<string, Vector2> => {
+): { positions: Map<string, Vector2>; directions: Map<string, Vector2> } => {
   const unitPositions = new Map<string, Vector2>()
+  const unitDirections = new Map<string, Vector2>()
   const unitCounts = new Map<string, number>()
 
   Object.values(state.soldiers).forEach((soldier) => {
-    const currentSum = unitPositions.get(soldier.unitId) ?? origo
+    const currentPosSum = unitPositions.get(soldier.unitId) ?? origo
+    const currentDirSum = unitDirections.get(soldier.unitId) ?? origo
     const currentCount = unitCounts.get(soldier.unitId) ?? 0
 
-    unitPositions.set(soldier.unitId, add(currentSum, soldier.position))
+    unitPositions.set(soldier.unitId, add(currentPosSum, soldier.position))
+    unitDirections.set(soldier.unitId, add(currentDirSum, fromAngle(soldier.angle)))
     unitCounts.set(soldier.unitId, currentCount + 1)
   })
 
-  const averages = new Map<string, Vector2>()
+  const positions = new Map<string, Vector2>()
+  const directions = new Map<string, Vector2>()
   unitPositions.forEach((sum, unitId) => {
     const count = unitCounts.get(unitId) ?? 1
-    averages.set(unitId, scale(sum, 1 / count))
+    positions.set(unitId, scale(sum, 1 / count))
+  })
+  unitDirections.forEach((sum, unitId) => {
+    directions.set(unitId, normalized(sum) ?? origo)
   })
 
-  return averages
+  return { positions, directions }
 }
 
 /**
@@ -412,14 +417,14 @@ const updateSoldier = (
   rigidBody: RAPIER.RigidBody,
   world: RAPIER.World,
   assignedSlot: Vector2,
-  unitAveragePositions: Map<string, Vector2>
+  unitPositions: Map<string, Vector2>
 ) => {
   const unit = state.units[soldier.unitId]
   if (!unit) {
     return
   }
 
-  const unitAveragePosition = unitAveragePositions.get(soldier.unitId)!
+  const unitAveragePosition = unitPositions.get(soldier.unitId)!
 
   const currentSlotAbsPos = add(unitAveragePosition, assignedSlot)
   const finalSlotAbsPos = add(unit.targetPos, assignedSlot)
@@ -519,7 +524,8 @@ export const syncFromWorld = (
 export const simulate = (
   currentState: GameState,
   world: RAPIER.World,
-  worldReferences: WorldReferences
+  worldReferences: WorldReferences,
+  unitAverages: { positions: Map<string, Vector2>; directions: Map<string, Vector2> }
 ) => {
   const unitId2Soldiers = getUnitIdToSoldiers(currentState)
 
@@ -533,13 +539,12 @@ export const simulate = (
     })
   })
 
-  const unitAveragePositions = computeUnitAveragePositions(currentState)
   syncToWorld(
     world,
     currentState,
     worldReferences,
     soldierSlotAssignments,
-    unitAveragePositions
+    unitAverages.positions
   )
   world.step()
   return syncFromWorld(world, worldReferences, currentState)

@@ -11,7 +11,7 @@ import {
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
-import { applyInput, createWorldReferences, simulate } from './simulation'
+import { applyInput, computeUnitAveragePositions, createWorldReferences, simulate } from './simulation'
 import { normalized, origo } from './math/Vector2.ts'
 import {
   createGamePixiReferences,
@@ -216,7 +216,8 @@ const initializeGame = async (
     keyTracker.drainEventQueue()
     playerInput.instructions = []
 
-    currentState = simulate(currentState, world, worldReferences)
+    const unitAverages = computeUnitAveragePositions(currentState)
+    currentState = simulate(currentState, world, worldReferences, unitAverages)
     if (isHost) {
       sendState(currentState)
     }
@@ -228,7 +229,8 @@ const initializeGame = async (
       selfId,
       screenDimensions,
       handlePlayerClick,
-      playerInput
+      playerInput,
+      unitAverages
     )
   })
 
