@@ -7,7 +7,7 @@ export const calculateFormationSlots = (unit: Unit, position: Vector2) => {
   const { formationWidth, soldierCount } = unit
   const formationDepth = Math.ceil(soldierCount / formationWidth)
   const formationDimN = vector(formationWidth, formationDepth)
-  const margin = staticWorldConfig.soldier.radius * 5
+  const margin = staticWorldConfig.soldier.radius * 2
   const slotWidth = staticWorldConfig.soldier.radius * 2 + margin
   const formationDim = add(
     scale(formationDimN, slotWidth),

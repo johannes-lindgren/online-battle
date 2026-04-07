@@ -16,6 +16,7 @@ import {
   type Vector2,
 } from './math/Vector2'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
+import { smoothstep } from './math/linear-algebra'
 
 const natureConst = {
   g: 9.82,
@@ -38,9 +39,8 @@ export const staticWorldConfig = {
     angularDamping: 5,
     friction: 0.2,
     restitution: 0.0,
-    // The force is proportional to the mass of the player
-    walkForcePerKg: 3 * natureConst.g,
-    runForcePerKg: 10 * natureConst.g,
+    walkForcePerKg: 0.5 * natureConst.g,
+    runForcePerKg: 2 * natureConst.g,
     torquePerKg: 0.1,
   },
   player: {
@@ -423,9 +423,22 @@ const updateSoldier = (
 
   const currentSlotAbsPos = add(unitAveragePosition, assignedSlot)
   const finalSlotAbsPos = add(unit.targetPos, assignedSlot)
-  const targetPos = finalSlotAbsPos
 
-  // Move towards assigned slot (already uniquely assigned in assignSoldiersToSlots)
+  const distToCurrentSlot = length(sub(currentSlotAbsPos, soldier.position))
+  const catchUpThreshold = staticWorldConfig.soldier.radius * 2
+  const catchUpT = Math.min(distToCurrentSlot / catchUpThreshold, 1)
+  // 1: final destination
+  // 2: slot destination
+  const smoothT = smoothstep(catchUpT)
+
+  const targetPos = add(
+    scale(finalSlotAbsPos, 1 - smoothT),
+    scale(currentSlotAbsPos, smoothT)
+  )
+  const walkForce = staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
+  const runForce = staticWorldConfig.soldier.runForcePerKg * rigidBody.mass()
+  const moveForce = walkForce * (1 - smoothT) + runForce * smoothT
+
   const directionToSlot = normalize(sub(targetPos, soldier.position))
 
   // Calculate repulsive force from nearby neighbors
@@ -444,9 +457,7 @@ const updateSoldier = (
       )
     ) ?? directionToSlot
 
-  const forceMagnitude =
-    staticWorldConfig.soldier.walkForcePerKg * rigidBody.mass()
-  const force = scale(finalDirection, forceMagnitude)
+  const force = scale(finalDirection, moveForce)
   rigidBody.addForce(force, true)
 }
 

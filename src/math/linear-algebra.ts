@@ -23,3 +23,5 @@ export const linspace = (x1: number, x2: number, n: number): number[] => {
   }
   return zeros(n).map((_, index) => x1 + (index * (x2 - x1)) / (n - 1))
 }
+
+export const smoothstep = (t: number): number => t * t * (3 - 2 * t)
