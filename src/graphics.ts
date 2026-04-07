@@ -43,6 +43,7 @@ type PixiUnitRef = {
   // The current average position
   positionSprite: Sprite
   slotsSprites: Sprite[]
+  pathGraphics: Graphics
 }
 
 type PixiTextures = {
@@ -197,7 +198,10 @@ const createUnit = (
   positionSprite.anchor.set(0.5)
   positionSprite.tint = player ? player.color : 'gray'
 
+  const pathGraphics = new Graphics()
+
   container.addChild(sprite)
+  appContainer.addChild(pathGraphics)
   appContainer.addChild(container)
   appContainer.addChild(positionSprite)
 
@@ -218,6 +222,7 @@ const createUnit = (
     sprite: sprite,
     positionSprite: positionSprite,
     slotsSprites: slotsSprites,
+    pathGraphics: pathGraphics,
   }
   pixiReferences.units.set(id, result)
 
@@ -311,7 +316,8 @@ export const syncToPixi = (
   unitAverages: {
     positions: Map<string, Vector2>
     directions: Map<string, Vector2>
-  }
+  },
+  unitPaths: Map<string, Vector2[]>
 ) => {
   const { selectedUnitId } = playerInput
   // Update camera position to follow own player
@@ -332,8 +338,10 @@ export const syncToPixi = (
   // Add or update unit graphics
   Object.entries(state.units).forEach(([id, unit]) => {
     const ref = getOrCreateUnit(appContainer, state, pixiReferences, id)
+    const player = state.players[unit.playerId]
 
     ref.container.position.set(unit.targetPos.x, unit.targetPos.y)
+    ref.sprite.angle = toPixiAngle(unit.targetAngle)
     const avgPosition = unitAverages.positions.get(id) ?? unit.targetPos
     const avgDirection = unitAverages.directions.get(id) ?? up
     ref.positionSprite.position.set(avgPosition.x, avgPosition.y)
@@ -347,6 +355,17 @@ export const syncToPixi = (
         sprite.position.set(pos.x, pos.y)
       }
     })
+
+    // Draw path from current position to target
+    ref.pathGraphics.clear()
+    const pathPoints = unitPaths.get(id) ?? []
+    if (pathPoints.length > 0) {
+      ref.pathGraphics.moveTo(pathPoints[0]!.x, pathPoints[0]!.y)
+      for (let i = 1; i < pathPoints.length; i++) {
+        ref.pathGraphics.lineTo(pathPoints[i]!.x, pathPoints[i]!.y)
+      }
+      ref.pathGraphics.stroke({ width: 2, color: player?.color ?? 0xffffff, alpha: 0.5 })
+    }
   })
 
   // Remove graphics for players that have left

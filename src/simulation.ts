@@ -165,6 +165,7 @@ export const applyInput = (
         return
       }
       unit.targetPos = instruction.position
+      unit.targetAngle = instruction.angle
     }
   })
 }
@@ -345,7 +346,10 @@ export const computeUnitAveragePositions = (
     const currentCount = unitCounts.get(soldier.unitId) ?? 0
 
     unitPositions.set(soldier.unitId, add(currentPosSum, soldier.position))
-    unitDirections.set(soldier.unitId, add(currentDirSum, fromAngle(soldier.angle)))
+    unitDirections.set(
+      soldier.unitId,
+      add(currentDirSum, fromAngle(soldier.angle))
+    )
     unitCounts.set(soldier.unitId, currentCount + 1)
   })
 
@@ -525,7 +529,10 @@ export const simulate = (
   currentState: GameState,
   world: RAPIER.World,
   worldReferences: WorldReferences,
-  unitAverages: { positions: Map<string, Vector2>; directions: Map<string, Vector2> }
+  unitAverages: {
+    positions: Map<string, Vector2>
+    directions: Map<string, Vector2>
+  }
 ) => {
   const unitId2Soldiers = getUnitIdToSoldiers(currentState)
 

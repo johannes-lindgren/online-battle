@@ -8,6 +8,7 @@ export type PlayerInstruction = {
   tag: 'moveUnit'
   unitId: string
   position: Vector2
+  angle: number
 }
 
 export type Unit = {

@@ -11,13 +11,79 @@ import {
 } from './Game'
 import { keyDownTracker } from './keyDownTracker.ts'
 import RAPIER from '@dimforge/rapier2d'
-import { applyInput, computeUnitAveragePositions, createWorldReferences, simulate } from './simulation'
-import { normalized, origo } from './math/Vector2.ts'
+import {
+  applyInput,
+  computeUnitAveragePositions,
+  createWorldReferences,
+  simulate,
+} from './simulation'
+import {
+  normalized,
+  origo,
+  add,
+  scale,
+  sub,
+  type Vector2,
+  fromAngle,
+  length,
+  angle,
+  normalize,
+} from './math/Vector2.ts'
+import { linspace } from './math/linear-algebra.ts'
 import {
   createGamePixiReferences,
   syncToPixi,
   type UnitClickEvent,
 } from './graphics.ts'
+
+const cubicBezier = (
+  p0: Vector2,
+  p1: Vector2,
+  p2: Vector2,
+  p3: Vector2,
+  t: number
+): Vector2 => {
+  const oneMinusT = 1 - t
+  const oneMinusT2 = oneMinusT * oneMinusT
+  const oneMinusT3 = oneMinusT2 * oneMinusT
+  const t2 = t * t
+  const t3 = t2 * t
+  return add(
+    add(scale(p0, oneMinusT3), scale(p1, 3 * oneMinusT2 * t)),
+    add(scale(p2, 3 * oneMinusT * t2), scale(p3, t3))
+  )
+}
+
+const computeUnitPaths = (
+  state: GameState,
+  unitAverages: {
+    positions: Map<string, Vector2>
+    directions: Map<string, Vector2>
+  }
+): Map<string, Vector2[]> => {
+  const paths = new Map<string, Vector2[]>()
+  const segmentCount = 20
+  const tValues = linspace(0, 1, segmentCount + 1)
+
+  Object.entries(state.units).forEach(([id, unit]) => {
+    const p0 = unitAverages.positions.get(id) ?? unit.targetPos
+    const p3 = unit.targetPos
+    const startDir =
+      unitAverages.directions.get(id) ?? fromAngle(unit.targetAngle)
+    const endDir = fromAngle(unit.targetAngle)
+
+    const dist = length(sub(p3, p0))
+    const controlDist = dist / 3
+
+    const p1 = add(p0, scale(startDir, controlDist))
+    const p2 = sub(p3, scale(endDir, controlDist))
+
+    const pathPoints = tValues.map((t) => cubicBezier(p0, p1, p2, p3, t))
+    paths.set(id, pathPoints)
+  })
+
+  return paths
+}
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected'
 
@@ -170,11 +236,20 @@ const initializeGame = async (
     }
 
     const worldPos = worldContainer.toLocal(e.global)
+    const pos: Vector2 = {
+      x: worldPos.x,
+      y: worldPos.y,
+    }
+    const unitAverages = computeUnitAveragePositions(currentState)
+    const unitPos: Vector2 =
+      unitAverages.positions.get(playerInput.selectedUnitId) ?? origo
+    const dir = normalize(sub(pos, unitPos))
 
     playerInput.instructions.push({
       tag: 'moveUnit',
       unitId: playerInput.selectedUnitId,
-      position: { x: worldPos.x, y: worldPos.y },
+      position: pos,
+      angle: angle(dir),
     })
   })
 
@@ -217,6 +292,7 @@ const initializeGame = async (
     playerInput.instructions = []
 
     const unitAverages = computeUnitAveragePositions(currentState)
+    const unitPaths = computeUnitPaths(currentState, unitAverages)
     currentState = simulate(currentState, world, worldReferences, unitAverages)
     if (isHost) {
       sendState(currentState)
@@ -230,7 +306,8 @@ const initializeGame = async (
       screenDimensions,
       handlePlayerClick,
       playerInput,
-      unitAverages
+      unitAverages,
+      unitPaths
     )
   })
 
