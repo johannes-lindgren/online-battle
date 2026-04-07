@@ -9,7 +9,7 @@ import {
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.ts'
-import { fromAngle, scale, type Vector2 } from './math/Vector2.ts'
+import { fromAngle, scale, up, type Vector2 } from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 import { zeros } from './math/linear-algebra.ts'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
@@ -82,11 +82,10 @@ const createTextures = async (renderer: Renderer): Promise<PixiTextures> => {
   )
   triangle.poly(
     [
-      // Place three vertices on the unit circle,
-      //  forming a triangle with one tip to the right
-      fromAngle((0 * Math.PI * 2) / 3),
-      fromAngle((1 * Math.PI * 2) / 3),
-      fromAngle((2 * Math.PI * 2) / 3),
+      // Pointy triangle with tip to the right
+      fromAngle(0),
+      fromAngle((2 * Math.PI) / 3 + 0.3),
+      fromAngle((-2 * Math.PI) / 3 - 0.3),
     ].map((vert) => scale(vert, triangleSize))
   )
   triangle.fill(0xffffff) // White color
@@ -309,7 +308,10 @@ export const syncToPixi = (
   screenDimensions: { width: number; height: number },
   onClick: (event: UnitClickEvent) => void,
   playerInput: PlayerInput,
-  unitAverages: { positions: Map<string, Vector2> }
+  unitAverages: {
+    positions: Map<string, Vector2>
+    directions: Map<string, Vector2>
+  }
 ) => {
   const { selectedUnitId } = playerInput
   // Update camera position to follow own player
@@ -333,7 +335,10 @@ export const syncToPixi = (
 
     ref.container.position.set(unit.targetPos.x, unit.targetPos.y)
     const avgPosition = unitAverages.positions.get(id) ?? unit.targetPos
+    const avgDirection = unitAverages.directions.get(id) ?? up
     ref.positionSprite.position.set(avgPosition.x, avgPosition.y)
+    const angle = Math.atan2(avgDirection.y, avgDirection.x)
+    ref.positionSprite.angle = toPixiAngle(angle)
     const slotsPositions = calculateFormationSlots(unit, avgPosition)
 
     ref.slotsSprites.forEach((sprite, index) => {
