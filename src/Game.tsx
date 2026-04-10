@@ -26,6 +26,7 @@ export type Soldier = {
   position: Vector2
   angle: number
   unitId: string
+  isDead: boolean
 }
 
 export type Player = {
@@ -109,6 +110,12 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
     return
   }
 
+  // Spawn a debug enemy when the first player joins
+  const isFirstPlayer = Object.keys(state.players).length === 0
+  if (isFirstPlayer) {
+    spawnDebugEnemy(state)
+  }
+
   // The new player
   const playerIndex = Object.keys(state.players).length
   const armySpawnPos = vector(0, playerIndex * 300)
@@ -123,6 +130,21 @@ export function handlePlayerJoin(state: GameState, playerId: string): void {
   createArmy(state, playerId, armySpawnPos)
 
   state.players[playerId] = player
+}
+
+const spawnDebugEnemy = (state: GameState) => {
+  const enemyId = 'debug-enemy'
+  const playerIndex = 0
+  const armySpawnPos = vector(0, playerIndex * 300)
+  const generalOffset = 100
+  const playerSpawnPos = vector(0, playerIndex * 300 - generalOffset)
+  const player = {
+    id: enemyId,
+    position: playerSpawnPos,
+    color: pseudoRandomColor(enemyId),
+  }
+  state.players[enemyId] = player
+  createArmy(state, enemyId, armySpawnPos)
 }
 
 const createArmy = (state: GameState, playerId: string, position: Vector2) => {
@@ -150,6 +172,7 @@ const spawnSolider = (
     position,
     unitId,
     angle,
+    isDead: false,
   }
 
   state.soldiers[soldierId] = soldier

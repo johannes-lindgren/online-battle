@@ -9,7 +9,17 @@ import {
 } from 'pixi.js'
 import type { GameState, PlayerInput } from './Game.tsx'
 import { staticWorldConfig } from './simulation.ts'
-import { fromAngle, scale, up, rotate, add, normalized, sub, angle, type Vector2 } from './math/Vector2.ts'
+import {
+  fromAngle,
+  scale,
+  up,
+  rotate,
+  add,
+  normalized,
+  sub,
+  angle,
+  type Vector2,
+} from './math/Vector2.ts'
 import { OutlineFilter } from 'pixi-filters'
 import { zeros } from './math/linear-algebra.ts'
 import { calculateFormationSlots } from './calculateFormationSlots.ts'
@@ -42,6 +52,7 @@ type PixiUnitRef = {
   sprite: Sprite
   // The current average position
   positionSprite: Sprite
+  slotsContainer: Container
   slotsSprites: Sprite[]
   pathGraphics: Graphics
 }
@@ -213,14 +224,18 @@ const createUnit = (
     return s
   })
 
+  const slotsContainer = new Container()
   slotsSprites.forEach((sprite) => {
-    appContainer.addChild(sprite)
+    slotsContainer.addChild(sprite)
   })
+  slotsContainer.visible = false
+  appContainer.addChild(slotsContainer)
 
   const result = {
     container: container,
     sprite: sprite,
     positionSprite: positionSprite,
+    slotsContainer: slotsContainer,
     slotsSprites: slotsSprites,
     pathGraphics: pathGraphics,
   }
@@ -348,20 +363,16 @@ export const syncToPixi = (
     const avgAngle = Math.atan2(avgDirection.y, avgDirection.x)
     ref.positionSprite.angle = toPixiAngle(avgAngle)
 
-    // Calculate rotated slot positions at first path waypoint
-    const pathStart = unit.path[0] ?? unit.targetPos
-    const pathNext = unit.path[1] ?? unit.targetPos
-    const pathDirection = normalized(sub(pathNext, pathStart))
+    // Calculate rotated slot positions at final destination
     const formationDefaultAngle = Math.PI / 2
-    const pathAngle = pathDirection ? angle(pathDirection) : unit.targetAngle
-    const rotationAngle = pathAngle - formationDefaultAngle
+    const rotationAngle = unit.targetAngle - formationDefaultAngle
 
     const relativeSlots = calculateFormationSlots(unit, { x: 0, y: 0 })
     ref.slotsSprites.forEach((sprite, index) => {
       const relSlot = relativeSlots[index]
       if (relSlot) {
         const rotatedSlot = rotate(relSlot, rotationAngle)
-        const absPos = add(pathStart, rotatedSlot)
+        const absPos = add(unit.targetPos, rotatedSlot)
         sprite.position.set(absPos.x, absPos.y)
       }
     })
@@ -374,7 +385,11 @@ export const syncToPixi = (
       for (let i = 1; i < pathPoints.length; i++) {
         ref.pathGraphics.lineTo(pathPoints[i]!.x, pathPoints[i]!.y)
       }
-      ref.pathGraphics.stroke({ width: 2, color: player?.color ?? 0xffffff, alpha: 0.5 })
+      ref.pathGraphics.stroke({
+        width: 2,
+        color: player?.color ?? 0xffffff,
+        alpha: 0.5,
+      })
     }
   })
 
@@ -399,6 +414,13 @@ export const syncToPixi = (
     )
     ref.container.position.set(soldier.position.x, soldier.position.y)
     ref.container.angle = toPixiAngle(soldier.angle)
+
+    // Make dead soldiers transparent
+    if (soldier.isDead) {
+      ref.container.alpha = 0.3
+    } else {
+      ref.container.alpha = 1
+    }
 
     // Apply highlight filter if this soldier belongs to the selected unit
     if (selectedUnitId !== undefined && soldier.unitId === selectedUnitId) {

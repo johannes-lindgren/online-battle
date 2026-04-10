@@ -6,7 +6,7 @@ import { zeros } from './math/linear-algebra.ts'
 export const calculateFormationSlots = (unit: Unit, position: Vector2) => {
   const { formationWidth, soldierCount } = unit
   const formationDepth = Math.ceil(soldierCount / formationWidth)
-  const slotSpacing = staticWorldConfig.soldier.radius * 4
+  const slotSpacing = staticWorldConfig.soldier.radius * 3
   const halfWidth = ((formationWidth - 1) * slotSpacing) / 2
   const halfDepth = ((formationDepth - 1) * slotSpacing) / 2
   return zeros(soldierCount).map((_, i) => {

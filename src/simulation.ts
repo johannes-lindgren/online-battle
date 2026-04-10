@@ -5,7 +5,6 @@ import {
   add,
   angle,
   cross,
-  dot,
   fromAngle,
   length,
   lengthSquared,
@@ -43,7 +42,7 @@ export const staticWorldConfig = {
     restitution: 0.0,
     walkForcePerKg: 0.5 * natureConst.g,
     runForcePerKg: 2 * natureConst.g,
-    torquePerKg: 0.1,
+    torquePerKg: 40,
   },
   player: {
     radius: 7,
@@ -236,6 +235,7 @@ export const applyInput = (
  * @param state
  * @param worldReferences
  * @param soldierSlotAssignments
+ * @param unitPositions
  */
 export const syncToWorld = (
   world: RAPIER.World,
@@ -281,7 +281,8 @@ export const syncToWorld = (
       rigidBody,
       world,
       assignedSlot,
-      unitPositions
+      unitPositions,
+      worldReferences
     )
   })
 
@@ -317,6 +318,110 @@ const avoidanceShape = new RAPIER.Ball(
   staticWorldConfig.soldier.radius * 2 + avoidanceDist
 )
 const alignmentShape = new RAPIER.Ball(alignmentRadius)
+
+const weaponRangeShape = new RAPIER.Ball(
+  staticWorldConfig.soldier.radius + staticWorldConfig.soldier.weapon.length
+)
+
+const isHitByEnemyWeapon = (
+  world: RAPIER.World,
+  state: GameState,
+  soldier: Soldier,
+  rigidBody: RAPIER.RigidBody,
+  worldReferences: WorldReferences
+): boolean => {
+  const unit = state.units[soldier.unitId]
+  if (!unit) return false
+  const ownPlayerId = unit.playerId
+
+  let isHit = false
+
+  world.intersectionsWithShape(
+    soldier.position,
+    0,
+    weaponRangeShape,
+    (collider) => {
+      const otherBody = collider.parent()
+      if (!otherBody || otherBody.handle === rigidBody.handle) return true
+
+      for (const [otherId, otherSoldier] of Object.entries(state.soldiers)) {
+        if (otherSoldier.isDead) continue
+        const otherHandle = worldReferences.soldier.get(otherId)
+        if (otherHandle !== otherBody.handle) continue
+
+        const otherUnit = state.units[otherSoldier.unitId]
+        if (!otherUnit || otherUnit.playerId === ownPlayerId) continue
+
+        const diff = sub(soldier.position, otherSoldier.position)
+        const dist = length(diff)
+        const weaponReach =
+          staticWorldConfig.soldier.radius * 2 +
+          staticWorldConfig.soldier.weapon.length
+        if (dist < weaponReach) {
+          isHit = true
+          return false
+        }
+      }
+      return true
+    }
+  )
+
+  return isHit
+}
+
+const enemyDetectionRange =
+  staticWorldConfig.soldier.radius * 2 +
+  staticWorldConfig.soldier.weapon.length * 2
+const enemyDetectionShape = new RAPIER.Ball(enemyDetectionRange)
+
+const findNearestEnemy = (
+  world: RAPIER.World,
+  state: GameState,
+  soldier: Soldier,
+  rigidBody: RAPIER.RigidBody,
+  worldReferences: WorldReferences
+): { position: Vector2; distanceSquared: number } | null => {
+  const unit = state.units[soldier.unitId]
+  if (!unit) return null
+  const ownPlayerId = unit.playerId
+
+  let closestDistanceSquared = Infinity
+  let nearestEnemyPos: Vector2 | null = null
+
+  world.intersectionsWithShape(
+    soldier.position,
+    0,
+    enemyDetectionShape,
+    (collider) => {
+      const otherBody = collider.parent()
+      if (!otherBody || otherBody.handle === rigidBody.handle) return true
+
+      for (const [otherId, otherSoldier] of Object.entries(state.soldiers)) {
+        if (otherSoldier.isDead) {
+          continue
+        }
+        const otherHandle = worldReferences.soldier.get(otherId)
+        if (otherHandle !== otherBody.handle) continue
+
+        const otherUnit = state.units[otherSoldier.unitId]
+        if (!otherUnit || otherUnit.playerId === ownPlayerId) continue
+
+        const diff = sub(otherSoldier.position, soldier.position)
+        const distSq = lengthSquared(diff)
+        if (distSq < closestDistanceSquared) {
+          closestDistanceSquared = distSq
+          nearestEnemyPos = otherSoldier.position
+        }
+      }
+      return true
+    }
+  )
+
+  if (!nearestEnemyPos) {
+    return null
+  }
+  return { position: nearestEnemyPos, distanceSquared: closestDistanceSquared }
+}
 
 const torqueTowards = (
   rigidBody: RAPIER.RigidBody,
@@ -426,26 +531,13 @@ export const computeUnitAveragePositions = (
   return { positions, directions }
 }
 
-/**
- * Precompute formation slots for each unit.
- * Formation slots are positioned between the unit's average position and target position.
- */
-const computeUnitFormationSlots = (
-  state: GameState
-): Map<string, Vector2[]> => {
-  const unitSlots = new Map<string, Vector2[]>()
-
-  Object.entries(state.units).forEach(([unitId, unit]) => {
-    unitSlots.set(unitId, calculateFormationSlots(unit, origo))
-  })
-
-  return unitSlots
-}
-
 const getUnitIdToSoldiers = (gameState: GameState): Map<string, Soldier[]> => {
   const soldiersByUnitId: Map<string, Soldier[]> = new Map()
 
   Object.values(gameState.soldiers).forEach((soldier) => {
+    if (soldier.isDead) {
+      return
+    }
     if (!soldiersByUnitId.has(soldier.unitId)) {
       soldiersByUnitId.set(soldier.unitId, [])
     }
@@ -481,12 +573,45 @@ const updateSoldier = (
   rigidBody: RAPIER.RigidBody,
   world: RAPIER.World,
   assignedSlot: Vector2,
-  unitPositions: Map<string, Vector2>
+  unitPositions: Map<string, Vector2>,
+  worldReferences: WorldReferences
 ) => {
   const unit = state.units[soldier.unitId]
   if (!unit) {
     return
   }
+
+  if (soldier.isDead) {
+    // Remove rigid body for dead soldiers
+    const handle = worldReferences.soldier.get(soldierId)
+    if (handle !== undefined) {
+      const rb = world.getRigidBody(handle)
+      if (rb) {
+        world.removeRigidBody(rb)
+      }
+      worldReferences.soldier.delete(soldierId)
+    }
+    return
+  }
+
+  // Check if hit by enemy weapon (low probability of death)
+  if (isHitByEnemyWeapon(world, state, soldier, rigidBody, worldReferences)) {
+    if (Math.random() < 0.01) {
+      soldier.isDead = true
+      // Remove rigid body immediately
+      world.removeRigidBody(rigidBody)
+      worldReferences.soldier.delete(soldierId)
+      return
+    }
+  }
+
+  const nearestEnemy = findNearestEnemy(
+    world,
+    state,
+    soldier,
+    rigidBody,
+    worldReferences
+  )
 
   const unitAveragePosition = unitPositions.get(soldier.unitId)!
 
@@ -537,8 +662,41 @@ const updateSoldier = (
       )
     ) ?? directionToSlot
 
-  const force = scale(finalDirection, moveForce)
-  rigidBody.addForce(force, true)
+  // Stop moving when enemy is in weapon range
+  if (!nearestEnemy) {
+    const force = scale(finalDirection, moveForce)
+    rigidBody.addForce(force, true)
+  } else {
+    // Shy away from enemy's weapon
+    const enemyDirection = normalized(
+      sub(nearestEnemy.position, soldier.position)
+    )
+    if (enemyDirection) {
+      const enemyDist = Math.sqrt(nearestEnemy.distanceSquared)
+      const weaponReach =
+        staticWorldConfig.soldier.radius * 2 +
+        staticWorldConfig.soldier.weapon.length
+      const shyAwayStrength = Math.max(0, 1 - enemyDist / weaponReach)
+      const shyAwayForce = scale(enemyDirection, -shyAwayStrength * walkForce)
+      rigidBody.addForce(shyAwayForce, true)
+
+      // Brownian motion when avoiding enemy
+      const brownianStrength = walkForce * 5
+      const brownianForce = {
+        x: (Math.random() - 0.5) * 2 * brownianStrength,
+        y: (Math.random() - 0.5) * 2 * brownianStrength,
+      }
+      rigidBody.addForce(brownianForce, true)
+    }
+  }
+
+  const targetDirection = nearestEnemy
+    ? (normalized(sub(nearestEnemy.position, soldier.position)) ??
+      fromAngle(pathAngle))
+    : fromAngle(pathAngle)
+  const torqueMultiplier =
+    staticWorldConfig.soldier.torquePerKg * rigidBody.mass()
+  torqueTowards(rigidBody, targetDirection, torqueMultiplier)
 }
 
 export const syncFromWorld = (
